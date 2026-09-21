@@ -27,6 +27,7 @@ static rfid_card_cb_t s_callback = NULL;
 #define TPrescalerReg        0x2B
 #define TReloadRegH          0x2C
 #define TReloadRegL          0x2D
+#define VersionReg           0x37
 
 // Commands
 #define PCD_IDLE             0x00
@@ -80,7 +81,7 @@ static bool rc522_to_card(uint8_t cmd, uint8_t *send_data, uint8_t send_len, uin
     uint8_t wait_irq = 0x30;
     rc522_write_reg(ComIEnReg, irq_en | 0x80);
     rc522_clear_bitmask(ComIrqReg, 0x80);
-    rc522_set_bitmask(FIFOLevelReg, 0x80);
+    rc522_set_bitmask(FIFOLevelReg, 0x80); // Flush FIFO
     rc522_write_reg(CommandReg, PCD_IDLE);
 
     for (uint8_t i = 0; i < send_len; i++) {
@@ -89,7 +90,7 @@ static bool rc522_to_card(uint8_t cmd, uint8_t *send_data, uint8_t send_len, uin
 
     rc522_write_reg(CommandReg, cmd);
     if (cmd == PCD_TRANSCEIVE) {
-        rc522_set_bitmask(BitFramingReg, 0x80);
+        rc522_set_bitmask(BitFramingReg, 0x80); // StartSend = 1
     }
 
     uint16_t i = 2000;
@@ -102,7 +103,8 @@ static bool rc522_to_card(uint8_t cmd, uint8_t *send_data, uint8_t send_len, uin
     rc522_clear_bitmask(BitFramingReg, 0x80);
 
     if (i != 0) {
-        if (!(rc522_read_reg(ErrorReg) & 0x1B)) {
+        uint8_t err = rc522_read_reg(ErrorReg);
+        if (!(err & 0x1B)) { // No BufferOvfl, CollErr, ParityErr, ProtocolErr
             if (n & irq_en & 0x01) return false;
             if (cmd == PCD_TRANSCEIVE) {
                 uint8_t fifo_len = rc522_read_reg(FIFOLevelReg);
@@ -110,7 +112,7 @@ static bool rc522_to_card(uint8_t cmd, uint8_t *send_data, uint8_t send_len, uin
                 if (last_bits) *back_len = (fifo_len - 1) * 8 + last_bits;
                 else *back_len = fifo_len * 8;
 
-                if (fifo_len == 0) fifo_len = 1;
+                if (fifo_len == 0) return false;
                 if (fifo_len > 16) fifo_len = 16;
                 for (uint8_t j = 0; j < fifo_len; j++) {
                     back_data[j] = rc522_read_reg(FIFODataReg);
@@ -126,7 +128,12 @@ static bool rc522_request(uint8_t req_mode, uint8_t *tag_type) {
     rc522_write_reg(BitFramingReg, 0x07);
     tag_type[0] = req_mode;
     uint32_t back_len = 0;
-    return rc522_to_card(PCD_TRANSCEIVE, tag_type, 1, tag_type, &back_len);
+    bool status = rc522_to_card(PCD_TRANSCEIVE, tag_type, 1, tag_type, &back_len);
+    // ATQA response phai co do dai dung 16 bits (2 bytes)
+    if (status && back_len == 16) {
+        return true;
+    }
+    return false;
 }
 
 static bool rc522_anticoll(uint8_t *ser_num) {
@@ -134,30 +141,59 @@ static bool rc522_anticoll(uint8_t *ser_num) {
     ser_num[0] = PICC_ANTICOLL;
     ser_num[1] = 0x20;
     uint32_t back_len = 0;
-    return rc522_to_card(PCD_TRANSCEIVE, ser_num, 2, ser_num, &back_len);
+    bool status = rc522_to_card(PCD_TRANSCEIVE, ser_num, 2, ser_num, &back_len);
+    // Anti-collision response phai dung 40 bits (5 bytes: 4 bytes UID + 1 byte BCC)
+    if (status && back_len == 40) {
+        // Kiem tra ma kiem tra BCC (Byte 4 = Byte 0 ^ 1 ^ 2 ^ 3)
+        uint8_t check = ser_num[0] ^ ser_num[1] ^ ser_num[2] ^ ser_num[3];
+        if (check != ser_num[4]) {
+            return false; // Sai checksum -> Nhieu tin hieu, loai bo
+        }
+        // Loai bo UID toan 0 hoac toan FF do duong truyen SPI ho
+        if ((ser_num[0] == 0 && ser_num[1] == 0 && ser_num[2] == 0 && ser_num[3] == 0) ||
+            (ser_num[0] == 0xFF && ser_num[1] == 0xFF && ser_num[2] == 0xFF && ser_num[3] == 0xFF)) {
+            return false;
+        }
+        return true;
+    }
+    return false;
 }
 
 static void rc522_task(void *pvParameters) {
     uint8_t str[16];
-    char last_uid_str[32] = {0};
-    TickType_t last_tap_time = 0;
+    char active_card_uid[32] = {0};
+    int absent_count = 0;
 
     while (1) {
+        bool card_present = false;
+
         if (rc522_request(PICC_REQIDL, str)) {
             if (rc522_anticoll(str)) {
+                card_present = true;
+                absent_count = 0;
+
                 char uid_str[32];
                 snprintf(uid_str, sizeof(uid_str), "%02X%02X%02X%02X", str[0], str[1], str[2], str[3]);
 
-                TickType_t now = xTaskGetTickCount();
-                // Chống quẹt liên tục lặp thẻ trong vòng 2 giây
-                if (strcmp(uid_str, last_uid_str) != 0 || (now - last_tap_time > pdMS_TO_TICKS(2000))) {
-                    ESP_LOGI(TAG, "Card detected! UID: %s", uid_str);
-                    strncpy(last_uid_str, uid_str, sizeof(last_uid_str) - 1);
-                    last_tap_time = now;
+                // Chi gui duy nhat 1 lan khi the moi duoc dat vao
+                // Neu the van dang de nguyen tren module -> KHONG gui lap lai
+                if (strcmp(uid_str, active_card_uid) != 0) {
+                    ESP_LOGI(TAG, "New card detected! UID: %s", uid_str);
+                    strncpy(active_card_uid, uid_str, sizeof(active_card_uid) - 1);
                     if (s_callback) s_callback(uid_str);
                 }
             }
         }
+
+        if (!card_present) {
+            absent_count++;
+            // The da duoc nhac ra khoi dau doc (3 chu ky vang mat lien tiep ~ 450ms)
+            if (absent_count >= 3 && active_card_uid[0] != '\0') {
+                ESP_LOGI(TAG, "Card released: %s", active_card_uid);
+                active_card_uid[0] = '\0';
+            }
+        }
+
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }
@@ -188,7 +224,7 @@ void rc522_init(rfid_card_cb_t callback) {
     spi_device_interface_config_t devcfg = {
         .clock_speed_hz = 5 * 1000 * 1000, // 5 MHz
         .mode = 0,
-        .spics_io_num = -1, // CS điều khiển thủ công
+        .spics_io_num = -1, // CS dieu khien thu cong
         .queue_size = 7,
     };
     spi_bus_add_device(SPI2_HOST, &devcfg, &s_spi);
@@ -202,6 +238,9 @@ void rc522_init(rfid_card_cb_t callback) {
     rc522_write_reg(TxASKReg, 0x40);
     rc522_write_reg(ModeReg, 0x3D);
     rc522_antenna_on();
+
+    uint8_t ver = rc522_read_reg(VersionReg);
+    ESP_LOGI(TAG, "RC522 VersionReg: 0x%02X", ver);
 
     xTaskCreate(rc522_task, "rc522_task", 3072, NULL, 5, NULL);
     ESP_LOGI(TAG, "RC522 initialized on SPI2 (SCK:%d, MOSI:%d, MISO:%d, CS:%d)",
