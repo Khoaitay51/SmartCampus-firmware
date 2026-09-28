@@ -9,12 +9,13 @@
 #include "servo_door.h"
 #include "buzzer.h"
 #include "oled_ssd1306.h"
+#include "fan_control.h"
 #include "app_mqtt.h"
 
 static const char *TAG = "MAIN";
 
 void app_main(void) {
-    ESP_LOGI(TAG, "=== SMARTCAMPUS ESP32 ALL-IN-ONE NODE BOOTING ===");
+    ESP_LOGI(TAG, "=== SMARTCAMPUS ESP32 ALL~~-IN-ONE NODE BOOTING ===");
 
     // 1. NVS Storage
     ESP_ERROR_CHECK(app_nvs_init());
@@ -24,17 +25,23 @@ void app_main(void) {
     rgb_led_set_color(40, 40, 0); // Vang: Dang khoi dong
     buzzer_init();
     servo_door_init();
+    fan_control_init();
     oled_init();
 
-    // 3. Khoi tao Sensors
+#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
+    // 3. Khoi tao Sensors (Chi can tren con Sensor / IR)
     dht22_init(PIN_DHT22);
     mq_sensor_init();
+#endif
 
     // 4. Ket noi Wi-Fi
-    ESP_LOGI(TAG, "Connecting to Wi-Fi...");
+    ESP_LOGI(TAG, "Connecting to Wi-Fi (%s)...", WIFI_SSID);
     app_wifi_init_sta();
-    app_wifi_wait_connected();
-    ESP_LOGI(TAG, "Wi-Fi connected successfully!");
+    if (app_wifi_wait_connected(6000)) {
+        ESP_LOGI(TAG, "Wi-Fi connected successfully!");
+    } else {
+        ESP_LOGW(TAG, "Wi-Fi not connected yet! Continuing boot, Wi-Fi will connect in background...");
+    }
 
     // 5. Khoi dong MQTT va cac Peripheral tasks (RFID, IR, Telemetry)
     app_mqtt_start();

@@ -1,5 +1,8 @@
 #include "oled_ssd1306.h"
 #include "app_config.h"
+#include "fan_control.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <driver/i2c_master.h>
 #include <esp_log.h>
 #include <string.h>
@@ -7,6 +10,7 @@
 static const char *TAG = "OLED";
 static i2c_master_bus_handle_t s_i2c_bus = NULL;
 static i2c_master_dev_handle_t s_oled_dev = NULL;
+static SemaphoreHandle_t s_oled_mutex = NULL;
 
 // Bang ma ky tu font 5x7 don gian
 static const uint8_t font5x7[][5] = {
@@ -72,6 +76,35 @@ static const uint8_t font5x7[][5] = {
     {0x00, 0x7F, 0x41, 0x41, 0x00}, // [
     {0x02, 0x04, 0x08, 0x10, 0x20}, // backslash
     {0x00, 0x41, 0x41, 0x7F, 0x00}, // ]
+    {0x04, 0x02, 0x01, 0x02, 0x04}, // ^
+    {0x40, 0x40, 0x40, 0x40, 0x40}, // _
+    {0x00, 0x01, 0x02, 0x04, 0x00}, // `
+    {0x20, 0x54, 0x54, 0x54, 0x78}, // a
+    {0x7F, 0x48, 0x44, 0x44, 0x38}, // b
+    {0x38, 0x44, 0x44, 0x44, 0x20}, // c
+    {0x38, 0x44, 0x44, 0x48, 0x7F}, // d
+    {0x38, 0x54, 0x54, 0x54, 0x18}, // e
+    {0x08, 0x7E, 0x09, 0x01, 0x02}, // f
+    {0x0C, 0x52, 0x52, 0x52, 0x3E}, // g
+    {0x7F, 0x08, 0x04, 0x04, 0x78}, // h
+    {0x00, 0x44, 0x7D, 0x40, 0x00}, // i
+    {0x20, 0x40, 0x44, 0x3D, 0x00}, // j
+    {0x7F, 0x10, 0x28, 0x44, 0x00}, // k
+    {0x00, 0x41, 0x7F, 0x40, 0x00}, // l
+    {0x7C, 0x04, 0x18, 0x04, 0x78}, // m
+    {0x7C, 0x08, 0x04, 0x04, 0x78}, // n
+    {0x38, 0x44, 0x44, 0x44, 0x38}, // o
+    {0x7C, 0x14, 0x14, 0x14, 0x08}, // p
+    {0x08, 0x14, 0x14, 0x18, 0x7C}, // q
+    {0x7C, 0x08, 0x04, 0x04, 0x08}, // r
+    {0x48, 0x54, 0x54, 0x54, 0x20}, // s
+    {0x04, 0x3F, 0x44, 0x40, 0x20}, // t
+    {0x3C, 0x40, 0x40, 0x20, 0x7C}, // u
+    {0x1C, 0x20, 0x40, 0x20, 0x1C}, // v
+    {0x3C, 0x40, 0x30, 0x40, 0x3C}, // w
+    {0x44, 0x28, 0x10, 0x28, 0x44}, // x
+    {0x0C, 0x50, 0x50, 0x50, 0x3C}, // y
+    {0x44, 0x64, 0x54, 0x4C, 0x44}, // z
 };
 
 static uint8_t s_buffer[1024] = {0};
@@ -97,7 +130,7 @@ static void oled_update_screen(void) {
 }
 
 static void oled_draw_char(int x, int page, char c) {
-    if (c < 32 || c > ']') c = ' ';
+    if (c < 32 || c > 'z') c = ' ';
     int idx = c - 32;
     for (int col = 0; col < 5; col++) {
         if (x + col < 128) {
@@ -115,6 +148,8 @@ static void oled_draw_string(int x, int page, const char *str) {
 }
 
 void oled_init(void) {
+    s_oled_mutex = xSemaphoreCreateMutex();
+
     i2c_master_bus_config_t bus_config = {
         .i2c_port = I2C_NUM_0,
         .sda_io_num = PIN_OLED_SDA,
@@ -140,10 +175,23 @@ void oled_init(void) {
         return;
     }
 
-    oled_write_cmd(0xAE); // Display off
-    oled_write_cmd(0x20); oled_write_cmd(0x00); // Horizontal addressing
-    oled_write_cmd(0x8D); oled_write_cmd(0x14); // Enable charge pump
-    oled_write_cmd(0xAF); // Display on
+    // SSD1306 full init sequence (128x64)
+    oled_write_cmd(0xAE);                           // Display OFF
+    oled_write_cmd(0xD5); oled_write_cmd(0x80);     // Set display clock divide ratio
+    oled_write_cmd(0xA8); oled_write_cmd(0x3F);     // MUX ratio = 64
+    oled_write_cmd(0xD3); oled_write_cmd(0x00);     // Display offset = 0
+    oled_write_cmd(0x40);                           // Display start line = 0
+    oled_write_cmd(0x8D); oled_write_cmd(0x14);     // Charge pump enabled
+    oled_write_cmd(0x20); oled_write_cmd(0x02);     // Page addressing mode (QUAN TRONG!)
+    oled_write_cmd(0xA1);                           // Segment remap (col 127 -> SEG0)
+    oled_write_cmd(0xC8);                           // COM output scan direction remapped
+    oled_write_cmd(0xDA); oled_write_cmd(0x12);     // COM pins config cho 128x64
+    oled_write_cmd(0x81); oled_write_cmd(0xCF);     // Contrast = 0xCF
+    oled_write_cmd(0xD9); oled_write_cmd(0xF1);     // Pre-charge period
+    oled_write_cmd(0xDB); oled_write_cmd(0x40);     // VCOMH deselect level
+    oled_write_cmd(0xA4);                           // Display ON theo RAM content
+    oled_write_cmd(0xA6);                           // Normal display (khong invert)
+    oled_write_cmd(0xAF);                           // Display ON
 
     memset(s_buffer, 0, sizeof(s_buffer));
     oled_draw_string(10, 2, "SMART CAMPUS");
@@ -152,23 +200,24 @@ void oled_init(void) {
     ESP_LOGI(TAG, "OLED SSD1306 initialized on I2C master (SDA:%d, SCL:%d)", PIN_OLED_SDA, PIN_OLED_SCL);
 }
 
-void oled_display_status(const char *room_mode, float temp, float hum, const char *card_uid, bool door_locked) {
+void oled_display_status(const char *room_mode, float temp, float hum, const char *card_uid, bool door_locked, int occ_count, int ir_in, int ir_out) {
+    if (s_oled_mutex) xSemaphoreTake(s_oled_mutex, portMAX_DELAY);
     memset(s_buffer, 0, sizeof(s_buffer));
 
-    // Dong 0: Tieu de phong
+    // Dong 0: Che do phong + Trang thai cua
     char line[32];
-    snprintf(line, sizeof(line), "MODE: [%s]", room_mode ? room_mode : "SAVING");
+    snprintf(line, sizeof(line), "M:[%s] D:%s", room_mode ? room_mode : "SAVING", door_locked ? "LCK" : "OPN");
     oled_draw_string(0, 0, line);
 
-    // Dong 2: Moi truong
-    snprintf(line, sizeof(line), "T:%.1fC  H:%.1f%%", temp, hum);
+    // Dong 2: Nhiet do + Do am + Quat (FAN)
+    snprintf(line, sizeof(line), "T:%.0fC H:%.0f%% F:%s", temp, hum, fan_control_is_on() ? "ON" : "--");
     oled_draw_string(0, 2, line);
 
-    // Dong 4: Trang thai cua
-    snprintf(line, sizeof(line), "DOOR: %s", door_locked ? "LOCKED" : "UNLOCKED");
+    // Dong 4: Nguoi trong phong + Muc logic 2 cam bien IR (1=Clear, 0=Blocked)
+    snprintf(line, sizeof(line), "OCC:%-3d IR:[%d,%d]", occ_count, ir_in, ir_out);
     oled_draw_string(0, 4, line);
 
-    // Dong 6: The quet gan nhat
+    // Dong 6: The RFID quet gan nhat
     if (card_uid && strlen(card_uid) > 0) {
         snprintf(line, sizeof(line), "CARD: %s", card_uid);
     } else {
@@ -177,4 +226,5 @@ void oled_display_status(const char *room_mode, float temp, float hum, const cha
     oled_draw_string(0, 6, line);
 
     oled_update_screen();
+    if (s_oled_mutex) xSemaphoreGive(s_oled_mutex);
 }

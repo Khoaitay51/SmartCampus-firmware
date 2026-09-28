@@ -2,11 +2,29 @@
 
 #include <stdint.h>
 
+// ---------------- Node Roles (Cấu hình vai trò cho từng bo mạch) ----------------
+#define ROLE_FULL_NODE          0   // 1 bo mạch duy nhất gánh toàn bộ (Cảm biến + OLED + Servo)
+#define ROLE_IR_SENSOR_NODE     1   // Bo mạch 1: Chuyên cảm biến IR đếm người, DHT22, MQ-2, RC522
+#define ROLE_OLED_DISPLAY_NODE  2   // Bo mạch 2: Chuyên nhận telemetry qua MQTT và hiển thị OLED (+ Servo)
+
+// 👉 ĐANG CẤU HÌNH CHO BO MẠCH 1 (IR SENSOR):
+#define CURRENT_NODE_ROLE       ROLE_IR_SENSOR_NODE
+
+#if CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
+  #define MQTT_USERNAME         "smartcampus_oled"
+  #define MQTT_CLIENT_PREFIX    "ESP32_OLED"
+#elif CURRENT_NODE_ROLE == ROLE_IR_SENSOR_NODE
+  #define MQTT_USERNAME         "smartcampus_ir"
+  #define MQTT_CLIENT_PREFIX    "ESP32_IR"
+#else
+  #define MQTT_USERNAME         "smartcampus"
+  #define MQTT_CLIENT_PREFIX    "ESP32_FULL"
+#endif
+
 // ---------------- Wi-Fi & MQTT Broker Config (Hardcoded cho Docker) ----------------
 #define WIFI_SSID                   "Trung Tam TT-TV"
 #define WIFI_PASSWORD               "12345679"
-#define MQTT_BROKER_URI             "mqtt://192.168.22.43:1883" // IP Card Wi-Fi máy Windows chạy Docker
-#define MQTT_USERNAME               "smartcampus"
+#define MQTT_BROKER_URI             "mqtt://192.168.22.17:1883" // IP Card Wi-Fi máy Windows chạy Docker/Bridge (192.168.22.17)
 #define MQTT_PASSWORD               "123456"
 
 // Phòng mặc định (Phòng 402 đã có sẵn trong Docker TimescaleDB)
@@ -33,8 +51,13 @@
 // Servo cửa SG90 (LEDC Channel 3)
 #define PIN_SERVO_DOOR              16
 
+// Quạt làm mát / thông gió DC 5V XD-4010 (LEDC Channel 4)
+#define PIN_FAN                     14
+#define FAN_ACTIVE_HIGH             1       // 1: Mức cao (Transistor NPN / MOSFET), 0: Mức thấp (Relay Active LOW)
+
 // Còi Buzzer
 #define PIN_BUZZER                  13
+#define BUZZER_ACTIVE_LOW           1       // 1: Kích mức thấp (Active LOW - phổ biến), 0: Kích mức cao (Active HIGH)
 
 // Màn hình OLED SSD1306 (I2C)
 #define PIN_OLED_SDA                21

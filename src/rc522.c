@@ -5,11 +5,14 @@
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <string.h>
 
 static const char *TAG = "RC522";
 static spi_device_handle_t s_spi = NULL;
 static rfid_card_cb_t s_callback = NULL;
+
+#define RFID_CARD_COOLDOWN_MS 2500 // Thoi gian cho toi thieu giua 2 lan quet cung the (2.5s)
 
 // RC522 Registers
 #define CommandReg           0x01
@@ -34,6 +37,7 @@ static rfid_card_cb_t s_callback = NULL;
 #define PCD_TRANSCEIVE       0x0C
 #define PCD_RESETPHASE       0x0F
 #define PICC_REQIDL          0x26
+#define PICC_REQALL          0x52
 #define PICC_ANTICOLL        0x93
 
 static void rc522_write_reg(uint8_t reg, uint8_t val) {
@@ -162,12 +166,21 @@ static bool rc522_anticoll(uint8_t *ser_num) {
 static void rc522_task(void *pvParameters) {
     uint8_t str[16];
     char active_card_uid[32] = {0};
+    char last_tap_uid[32] = {0};
+    int64_t last_tap_time = 0;
     int absent_count = 0;
 
     while (1) {
         bool card_present = false;
 
-        if (rc522_request(PICC_REQIDL, str)) {
+        // Kiem tra the o trang thai IDLE (REQIDL) hoac ACTIVE/HALT (REQALL)
+        // giup tranh hien tuong the van dat tren dau doc nhung bi rot frame do doi trang thai ISO14443
+        bool found = rc522_request(PICC_REQIDL, str);
+        if (!found) {
+            found = rc522_request(PICC_REQALL, str);
+        }
+
+        if (found) {
             if (rc522_anticoll(str)) {
                 card_present = true;
                 absent_count = 0;
@@ -175,26 +188,36 @@ static void rc522_task(void *pvParameters) {
                 char uid_str[32];
                 snprintf(uid_str, sizeof(uid_str), "%02X%02X%02X%02X", str[0], str[1], str[2], str[3]);
 
-                // Chi gui duy nhat 1 lan khi the moi duoc dat vao
-                // Neu the van dang de nguyen tren module -> KHONG gui lap lai
-                if (strcmp(uid_str, active_card_uid) != 0) {
+                int64_t now = esp_timer_get_time() / 1000;
+                bool is_same_as_last = (strcmp(uid_str, last_tap_uid) == 0);
+                bool in_cooldown = is_same_as_last && ((now - last_tap_time) < RFID_CARD_COOLDOWN_MS);
+
+                // Chi kich hoat callback khi:
+                // 1. The khac voi the dang active tren dau doc
+                // 2. Hoac da qua thoi gian cooldown 2.5s (chong spam quet the lien tuc)
+                if (!in_cooldown && strcmp(uid_str, active_card_uid) != 0) {
                     ESP_LOGI(TAG, "New card detected! UID: %s", uid_str);
                     strncpy(active_card_uid, uid_str, sizeof(active_card_uid) - 1);
+                    strncpy(last_tap_uid, uid_str, sizeof(last_tap_uid) - 1);
+                    last_tap_time = now;
                     if (s_callback) s_callback(uid_str);
+                } else {
+                    // The van dang nam tren module hoac trong thoi gian cooldown -> duy tri active_card_uid
+                    strncpy(active_card_uid, uid_str, sizeof(active_card_uid) - 1);
                 }
             }
         }
 
         if (!card_present) {
             absent_count++;
-            // The da duoc nhac ra khoi dau doc (3 chu ky vang mat lien tiep ~ 450ms)
-            if (absent_count >= 3 && active_card_uid[0] != '\0') {
+            // The da thuc su duoc nhac ra khoi dau doc (can it nhat 8 chu ky ~ 800ms khong co tin hieu de chong jitter)
+            if (absent_count >= 8 && active_card_uid[0] != '\0') {
                 ESP_LOGI(TAG, "Card released: %s", active_card_uid);
                 active_card_uid[0] = '\0';
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(150));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -242,7 +265,7 @@ void rc522_init(rfid_card_cb_t callback) {
     uint8_t ver = rc522_read_reg(VersionReg);
     ESP_LOGI(TAG, "RC522 VersionReg: 0x%02X", ver);
 
-    xTaskCreate(rc522_task, "rc522_task", 3072, NULL, 5, NULL);
+    xTaskCreate(rc522_task, "rc522_task", 4096, NULL, 5, NULL);
     ESP_LOGI(TAG, "RC522 initialized on SPI2 (SCK:%d, MOSI:%d, MISO:%d, CS:%d)",
              PIN_RC522_SCK, PIN_RC522_MOSI, PIN_RC522_MISO, PIN_RC522_CS);
 }

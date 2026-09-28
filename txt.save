@@ -1,0 +1,2 @@
+2 sensor IR sensor: IN + OUT: GND + VCC + IN32 + OUT33
+OLED : SDA/SCK/gnd/vcc : 21/5/gnd/vcc

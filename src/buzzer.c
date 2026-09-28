@@ -4,16 +4,25 @@
 #include <freertos/task.h>
 #include <driver/gpio.h>
 #include <esp_log.h>
+#include <stdatomic.h>
 
 static const char *TAG = "BUZZER";
-static buzzer_pattern_t s_current_pattern = BUZZER_PATTERN_OFF;
+static _Atomic buzzer_pattern_t s_current_pattern = BUZZER_PATTERN_OFF;
 
 static void buzzer_on(void) {
+#if BUZZER_ACTIVE_LOW
+    gpio_set_level(PIN_BUZZER, 0);
+#else
     gpio_set_level(PIN_BUZZER, 1);
+#endif
 }
 
 static void buzzer_off(void) {
+#if BUZZER_ACTIVE_LOW
+    gpio_set_level(PIN_BUZZER, 1);
+#else
     gpio_set_level(PIN_BUZZER, 0);
+#endif
 }
 
 static void buzzer_task(void *pvParameters) {
@@ -73,6 +82,6 @@ void buzzer_play(buzzer_pattern_t pattern) {
 }
 
 void buzzer_set_state(bool on) {
-    if (on) s_current_pattern = BUZZER_PATTERN_EMERGENCY;
+    if (on) s_current_pattern = BUZZER_PATTERN_SHORT;
     else s_current_pattern = BUZZER_PATTERN_OFF;
 }

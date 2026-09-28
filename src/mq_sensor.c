@@ -61,7 +61,7 @@ void mq_sensor_read(mq_data_t *data) {
         data->smoke_state = "normal";
     }
 
-    // ??c l??ng CO2 v? Air Quality t? MQ-135
+    // Uoc luong CO2 va Air Quality tu MQ-135
     data->co2_ppm = 400 + (raw_mq135 * 1600) / 4095;
     data->air_quality = 30 + (raw_mq135 * 170) / 4095;
 }

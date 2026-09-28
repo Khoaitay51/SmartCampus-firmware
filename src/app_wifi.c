@@ -15,7 +15,8 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "Disconnected from Wi-Fi, reconnecting...");
+        wifi_event_sta_disconnected_t* disconn = (wifi_event_sta_disconnected_t*) event_data;
+        ESP_LOGW(TAG, "Disconnected from Wi-Fi (reason: %d), reconnecting...", disconn ? disconn->reason : 0);
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -43,6 +44,7 @@ void app_wifi_init_sta(void) {
         .sta = {
             .ssid = WIFI_SSID,
             .password = WIFI_PASSWORD,
+            .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
         },
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -50,8 +52,16 @@ void app_wifi_init_sta(void) {
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-void app_wifi_wait_connected(void) {
-    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
+bool app_wifi_wait_connected(uint32_t timeout_ms) {
+    if (!s_wifi_event_group) return false;
+    TickType_t ticks = (timeout_ms == portMAX_DELAY) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, ticks);
+    return (bits & WIFI_CONNECTED_BIT) != 0;
+}
+
+bool app_wifi_is_connected(void) {
+    if (!s_wifi_event_group) return false;
+    return (xEventGroupGetBits(s_wifi_event_group) & WIFI_CONNECTED_BIT) != 0;
 }
 
 void app_wifi_get_mac_str(char *mac_str) {

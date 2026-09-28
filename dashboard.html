@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartCampus — Giám Sát Occupancy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #ffffff;
+      color: #0f172a;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .occupancy-card {
+      background: #ffffff;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 24px;
+      padding: 56px 40px;
+      width: 100%;
+      max-width: 680px;
+      text-align: center;
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      transition: all 0.3s ease;
+    }
+
+    .occupancy-card.alert-in {
+      border-color: #16a34a;
+      box-shadow: 0 0 0 5px rgba(22, 163, 74, 0.12);
+    }
+
+    .occupancy-card.alert-out {
+      border-color: #d97706;
+      box-shadow: 0 0 0 5px rgba(217, 119, 6, 0.12);
+    }
+
+    .room-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 24px;
+      border-radius: 9999px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+      transition: all 0.25s ease;
+    }
+
+    .room-badge.occupied {
+      background: #dcfce7;
+      color: #16a34a;
+      border-color: #bbf7d0;
+    }
+
+    .headcount-number {
+      font-size: 120px;
+      font-weight: 800;
+      line-height: 1;
+      font-family: 'JetBrains Mono', monospace;
+      color: #0f172a;
+      margin: 8px 0;
+      letter-spacing: -3px;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s ease;
+    }
+
+    .occupancy-card.alert-in .headcount-number {
+      color: #16a34a;
+      transform: scale(1.06);
+    }
+
+    .occupancy-card.alert-out .headcount-number {
+      color: #d97706;
+      transform: scale(0.95);
+    }
+
+    .headcount-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #64748b;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .alert-banner {
+      width: 100%;
+      padding: 14px 20px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      box-sizing: border-box;
+      transition: all 0.25s ease;
+    }
+
+    .alert-banner.banner-in {
+      background: #dcfce7;
+      border-color: #86efac;
+      color: #16a34a;
+    }
+
+    .alert-banner.banner-out {
+      background: #fef3c7;
+      border-color: #fde047;
+      color: #d97706;
+    }
+  </style>
+
+  <!-- Paho MQTT client -->
+  <script src="assets/paho-mqtt.min.js"></script>
+  <script>
+    if (typeof Paho === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+
+  <div id="occCard" class="occupancy-card">
+    <div id="roomBadge" class="room-badge">PHÒNG TRỐNG (0 NGƯỜI)</div>
+
+    <div id="headcount" class="headcount-number">0</div>
+
+    <div class="headcount-label">SỐ NGƯỜI TRONG PHÒNG HIỆN TẠI</div>
+
+    <div id="alertBanner" class="alert-banner">
+      <span id="bannerText">📡 Đang theo dõi cảm biến IR từ ESP32...</span>
+    </div>
+  </div>
+
+  <script>
+    let client = null;
+    let count = 0;
+    let bannerTimer = null;
+    const hosts = ['localhost', '127.0.0.1', '192.168.22.17', '172.16.183.208'];
+    let hostIdx = 0;
+
+    function renderUI() {
+      document.getElementById('headcount').innerText = count;
+      const badge = document.getElementById('roomBadge');
+      if (count > 0) {
+        badge.className = 'room-badge occupied';
+        badge.innerText = `ĐANG SỬ DỤNG (${count} NGƯỜI)`;
+      } else {
+        count = 0;
+        badge.className = 'room-badge';
+        badge.innerText = 'PHÒNG TRỐNG (0 NGƯỜI)';
+      }
+    }
+
+    function triggerAlert(dir) {
+      const card = document.getElementById('occCard');
+      const banner = document.getElementById('alertBanner');
+      const text = document.getElementById('bannerText');
+
+      if (bannerTimer) clearTimeout(bannerTimer);
+
+      if (dir === 'IN') {
+        card.className = 'occupancy-card alert-in';
+        banner.className = 'alert-banner banner-in';
+        text.innerText = '🟢 Có người vào phòng (IN +1)';
+      } else {
+        card.className = 'occupancy-card alert-out';
+        banner.className = 'alert-banner banner-out';
+        text.innerText = '🟠 Có người ra khỏi phòng (OUT -1)';
+      }
+
+      bannerTimer = setTimeout(() => {
+        card.className = 'occupancy-card';
+        banner.className = 'alert-banner';
+        text.innerText = '📡 Đang theo dõi cảm biến IR từ ESP32...';
+      }, 1500);
+    }
+
+    function tryConnect() {
+      const host = hosts[hostIdx];
+      const port = 9001;
+      const path = '/mqtt';
+      const clientId = 'dash-occ-' + Math.random().toString(16).substring(2, 8);
+
+      if (typeof Paho === 'undefined' || !Paho.MQTT) {
+        setTimeout(tryConnect, 500);
+        return;
+      }
+
+      if (client) {
+        try { client.disconnect(); } catch (e) {}
+        client = null;
+      }
+
+      client = new Paho.MQTT.Client(host, port, path, clientId);
+
+      client.onConnectionLost = (err) => {
+        document.getElementById('bannerText').innerText = '📡 Đang kết nối lại MQTT...';
+        hostIdx = (hostIdx + 1) % hosts.length;
+        setTimeout(tryConnect, 2000);
+      };
+
+      client.onMessageArrived = (msg) => {
+        try {
+          const data = JSON.parse(msg.payloadString);
+          const p = data.payload || data;
+          const type = (p.occupancy_type || '').toUpperCase();
+
+          if (p.occupancy_count !== undefined && p.occupancy_count !== null) {
+            count = parseInt(p.occupancy_count, 10);
+          } else {
+            if (type === 'IN') count++;
+            else if (type === 'OUT') count = Math.max(0, count - 1);
+          }
+
+          if (type === 'IN' || type === 'OUT') {
+            triggerAlert(type);
+          }
+          renderUI();
+        } catch (e) {
+          console.error('Lỗi phân tích bản tin:', e);
+        }
+      };
+
+      client.connect({
+        userName: 'smartcampus',
+        password: '123456',
+        useSSL: false,
+        timeout: 3,
+        keepAliveInterval: 30,
+        cleanSession: true,
+        onSuccess: () => {
+          document.getElementById('bannerText').innerText = '📡 Đang theo dõi cảm biến IR từ ESP32...';
+          client.subscribe('smartcampus/v1/telemetry/room/+/occupancy');
+        },
+        onFailure: (err) => {
+          hostIdx = (hostIdx + 1) % hosts.length;
+          setTimeout(tryConnect, 1500);
+        }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      tryConnect();
+    });
+  </script>
+</body>
+</html>

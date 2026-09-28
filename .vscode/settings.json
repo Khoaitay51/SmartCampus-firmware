@@ -4,5 +4,6 @@
     "idf.pythonBinPath": "/home/user_kma_chinh/.espressif/python_env/idf6.1_py3.12_env/bin/python",
     "idf.port": "/dev/ttyS6",
     "idf.flashType": "UART",
-    "idf.target": "esp32"
+    "idf.target": "esp32",
+    "idf.currentSetup": "/home/user_kma_chinh/.espressif/v6.1/esp-idf"
 }

@@ -21,13 +21,13 @@ def forward(src, dst):
         except Exception:
             pass
 
-def handle_client(client_sock, client_addr):
-    print(f"[BRIDGE] Incoming connection from {client_addr}", flush=True)
+def handle_client(client_sock, client_addr, port):
+    print(f"[BRIDGE:{port}] Incoming connection from {client_addr}", flush=True)
     target_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        target_sock.connect(('127.0.0.1', 1883))
+        target_sock.connect(('127.0.0.1', port))
     except Exception as e:
-        print(f"[BRIDGE] Failed to connect to Mosquitto 127.0.0.1:1883: {e}", flush=True)
+        print(f"[BRIDGE:{port}] Failed to connect to Mosquitto 127.0.0.1:{port}: {e}", flush=True)
         client_sock.close()
         return
 
@@ -36,23 +36,41 @@ def handle_client(client_sock, client_addr):
     t1.start()
     t2.start()
 
-def main():
+def start_listener(port, label):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server.bind(('192.168.22.43', 1883))
-        server.listen(16)
-        print("[BRIDGE] MQTT Proxy active on 192.168.22.43:1883 -> 127.0.0.1:1883", flush=True)
+        server.bind(('0.0.0.0', port))
+        server.listen(32)
+        print(f"[BRIDGE] {label} active on 0.0.0.0:{port} -> 127.0.0.1:{port}", flush=True)
     except Exception as e:
-        print(f"[BRIDGE] Fatal bind error: {e}", flush=True)
-        sys.exit(1)
+        print(f"[BRIDGE] Warning: Could not bind 0.0.0.0:{port}: {e}", flush=True)
+        return
 
     while True:
         try:
             client_sock, client_addr = server.accept()
-            handle_client(client_sock, client_addr)
+            threading.Thread(target=handle_client, args=(client_sock, client_addr, port), daemon=True).start()
         except Exception as e:
-            print(f"[BRIDGE] Accept error: {e}", flush=True)
+            print(f"[BRIDGE:{port}] Accept error: {e}", flush=True)
+
+def main():
+    print("==========================================================", flush=True)
+    print("🚀 SmartCampus Dual MQTT Bridge (TCP & WebSocket)", flush=True)
+    print("==========================================================", flush=True)
+
+    t_mqtt = threading.Thread(target=start_listener, args=(1883, "MQTT TCP (ESP32)"), daemon=True)
+    t_ws   = threading.Thread(target=start_listener, args=(9001, "MQTT WebSocket (Dashboard)"), daemon=True)
+
+    t_mqtt.start()
+    t_ws.start()
+
+    import time
+    while True:
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            break
 
 if __name__ == '__main__':
     main()
