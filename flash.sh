@@ -11,6 +11,9 @@ echo "Cổng: $PORT | Tốc độ: $BAUD"
 echo "=========================================================="
 
 echo ">> 1. Biên dịch code..."
+if [ -z "$IDF_PATH" ] && [ -f "$HOME/.espressif/v6.1/esp-idf/export.sh" ]; then
+    . "$HOME/.espressif/v6.1/esp-idf/export.sh" >/dev/null 2>&1
+fi
 ninja -C build
 
 mkdir -p /mnt/c/temp/esp32

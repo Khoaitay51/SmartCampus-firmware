@@ -54,9 +54,23 @@ def start_listener(port, label):
         except Exception as e:
             print(f"[BRIDGE:{port}] Accept error: {e}", flush=True)
 
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
 def main():
+    local_ip = get_local_ip()
     print("==========================================================", flush=True)
     print("🚀 SmartCampus Dual MQTT Bridge (TCP & WebSocket)", flush=True)
+    print(f"📡 Local Host IP       : {local_ip}", flush=True)
+    print(f"👉 ESP32 MQTT_BROKER_URI: mqtt://{local_ip}:1883", flush=True)
+    print(f"👉 Dashboard WebSocket  : ws://{local_ip}:9001", flush=True)
     print("==========================================================", flush=True)
 
     t_mqtt = threading.Thread(target=start_listener, args=(1883, "MQTT TCP (ESP32)"), daemon=True)

@@ -22,9 +22,9 @@
 #endif
 
 // ---------------- Wi-Fi & MQTT Broker Config (Hardcoded cho Docker) ----------------
-#define WIFI_SSID                   "Trung Tam TT-TV"
-#define WIFI_PASSWORD               "12345679"
-#define MQTT_BROKER_URI             "mqtt://192.168.22.17:1883" // IP Card Wi-Fi máy Windows chạy Docker/Bridge (192.168.22.17)
+#define WIFI_SSID                   "P902"
+#define WIFI_PASSWORD               "Cntt@902"
+#define MQTT_BROKER_URI             "mqtt://192.168.1.143:1883" // IP Card Wi-Fi máy Windows chạy Docker/Bridge (192.168.1.143)
 #define MQTT_PASSWORD               "123456"
 
 // Phòng mặc định (Phòng 402 đã có sẵn trong Docker TimescaleDB)
