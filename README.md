@@ -40,15 +40,28 @@ Tất cả các chân được quy hoạch tối ưu, không xung đột chân n
 
 ---
 
-## ⚙️ Cấu hình hệ thống
+## ⚙️ Cấu hình Vai trò Node (Node Roles) & Mạng
 
-Mở file [`include/app_config.h`](include/app_config.h) và cập nhật thông tin mạng:
+Trong [`include/app_config.h`](include/app_config.h), chọn vai trò phù hợp cho bo mạch bằng cách đổi giá trị `CURRENT_NODE_ROLE`:
 
 ```c
-#define WIFI_SSID           "Tên_WiFi_Của_Bạn"
-#define WIFI_PASSWORD       "Mật_Khẩu_WiFi"
-#define MQTT_BROKER_URI     "mqtt://192.168.1.50:1883" // Địa chỉ IP máy chạy Mosquitto Broker
+#define ROLE_FULL_NODE          0   // 1 bo mạch duy nhất gánh toàn bộ (Cảm biến + OLED + Servo)
+#define ROLE_IR_SENSOR_NODE     1   // Bo mạch 1: Chuyên cảm biến IR đếm người, DHT22, MQ-2, RC522
+#define ROLE_OLED_DISPLAY_NODE  2   // Bo mạch 2: Chuyên nhận telemetry qua MQTT và hiển thị OLED (+ Servo)
+#define ROLE_CORRIDOR_NODE      3   // Bo mạch 3: Node Hành lang - Quét thẻ RFID đăng ký thẻ chưa có UUID / Access control
+
+#define CURRENT_NODE_ROLE       ROLE_IR_SENSOR_NODE
 ```
+
+### Chi tiết Node Hành lang (`ROLE_CORRIDOR_NODE`):
+- **Mục đích**: Đặt tại khu vực hành lang / sảnh sinh viên để quét thẻ RFID.
+- **Nghiệp vụ**:
+  - Khi quét thẻ chưa có trong hệ thống (`card_uid` chưa gắn `user_id`), ESP32 gửi gói tin lên topic `smartcampus/v1/card/registration/request` với trạng thái `pending`.
+  - Màn hình OLED hiển thị: `UID: <card_uid>` kèm dòng thông báo `ST: CHO DUYET (PENDING)`.
+  - Đèn RGB LED chuyển màu **Vàng cam**, còi Buzzer phát 2 tiếng beep ngắn xác nhận đã gửi yêu cầu.
+  - Khi Admin phê duyệt (`APPROVED`) hoặc từ chối (`REJECTED`) trên hệ thống, Edge Gateway gửi tin nhắn phản hồi về topic `smartcampus/v1/card/registration/response/{mac_address}`:
+    - `APPROVED`: OLED hiển thị tên người dùng và `ST: DA DUYET / OK`, LED đổi sang **Xanh lá**, còi kêu 1 tiếng beep ngắn.
+    - `REJECTED`: OLED hiển thị `ST: TU CHOI`, LED đổi sang **Đỏ**, còi hú dài báo lỗi.
 
 ---
 
@@ -76,7 +89,9 @@ idf.py -p COMx flash monitor   # Trên Windows (thay COMx tương ứng)
 3. **Đếm người ra/vào (FR-SD-02)**:
    - Bước qua `IR_IN` trước rồi `IR_OUT` -> Gửi sự kiện `IN` lên `smartcampus/v1/telemetry/room/{room_id}/occupancy`.
    - Bước qua `IR_OUT` trước rồi `IR_IN` -> Gửi sự kiện `OUT` lên `smartcampus/v1/telemetry/room/{room_id}/occupancy`.
-4. **Điểm danh thẻ RFID RC522 (FR-SD-04)**: Quẹt thẻ sinh viên/giảng viên -> Gửi mã thẻ lên `smartcampus/v1/event/room/{room_id}/rfid`, còi kêu 1 tiếng bíp.
+4. **Điểm danh & Đăng ký thẻ RFID RC522 (FR-SD-04, FR-RF-01)**:
+   - Tại phòng học (`ROLE_FULL_NODE` / `ROLE_IR_SENSOR_NODE`): Quẹt thẻ sinh viên/giảng viên -> Gửi mã thẻ lên `smartcampus/v1/event/room/{room_id}/rfid` điểm danh.
+   - Tại hành lang (`ROLE_CORRIDOR_NODE`): Quẹt thẻ -> Gửi yêu cầu đăng ký lên `smartcampus/v1/card/registration/request` với trạng thái `pending`.
 5. **Đồng bộ trạng thái FSM (FR-AC-01, FR-AC-02, FR-AC-04)**:
    - `SAVING`: LED tắt (`#000000`), Servo khóa cửa.
    - `SELF_STUDY`: LED xanh lam nhạt (`#66CCFF`), Servo mở cửa.
@@ -84,4 +99,6 @@ idf.py -p COMx flash monitor   # Trên Windows (thay COMx tương ứng)
    - `EXAM`: LED hổ phách (`#FFBF00`), Servo khóa cửa, Buzzer kêu 2 tiếng bíp bắt đầu thi.
    - `SUSPECTED`: LED cam thở (`#FF8C00` Breathe).
    - `EMERGENCY`: LED đỏ chớp nháy dồn dập (`#FF0000` Strobe), Servo lập tức mở toang cửa, Buzzer hú liên tục.
-6. **Màn hình OLED SSD1306 (FR-AC-05)**: Hiển thị trực quan: Trạng thái phòng hiện tại, Nhiệt độ/Độ ẩm thực tế, Trạng thái chốt cửa, Mã thẻ vừa quẹt.
+6. **Màn hình OLED SSD1306 (FR-AC-05)**:
+   - Trên Node Phòng học: Hiển thị chế độ phòng, Nhiệt độ/Độ ẩm, Chốt cửa, Mã thẻ gần nhất.
+   - Trên Node Hành lang: Hiển thị giao diện đăng ký thẻ chuyên dụng (`=== CORRIDOR NODE ===`, `UID`, `ST: CHO DUYET`, `INFO`).

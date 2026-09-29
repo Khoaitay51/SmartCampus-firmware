@@ -1,5 +1,6 @@
 #include "app_wifi.h"
 #include "app_config.h"
+#include "app_nvs.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <esp_wifi.h>
@@ -40,13 +41,23 @@ void app_wifi_init_sta(void) {
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, &instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL, &instance_got_ip));
 
+    // F1 fix: Doc WiFi credentials tu NVS (fallback ve DEFAULT_ neu chua cau hinh)
+    char ssid[33] = {0};
+    char pass[65] = {0};
+    app_nvs_get_wifi_ssid(ssid, sizeof(ssid));
+    app_nvs_get_wifi_pass(pass, sizeof(pass));
+
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASSWORD,
             .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
         },
     };
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, pass, sizeof(wifi_config.sta.password) - 1);
+
+    ESP_LOGI(TAG, "Connecting to WiFi SSID: %s (from %s)",
+             ssid, "NVS/default");
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());

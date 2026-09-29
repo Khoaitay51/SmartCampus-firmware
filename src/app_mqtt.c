@@ -1,6 +1,7 @@
 #include "app_mqtt.h"
 #include "app_config.h"
 #include "app_nvs.h"
+#include "app_sntp.h"
 #include "app_wifi.h"
 #include "rgb_led.h"
 #include "dht22.h"
@@ -39,7 +40,9 @@ bool app_mqtt_is_connected(void) {
 }
 
 static void app_mqtt_refresh_display(void) {
-#if CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
+#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+    oled_display_corridor(s_last_card, "SAN SANG", "QUET THE DANG KY");
+#elif CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
     oled_display_status(s_last_mode, s_last_temp, s_last_hum, s_last_card, 
                         servo_door_is_locked(), s_occupancy_count, 1, 1);
 #else
@@ -49,7 +52,7 @@ static void app_mqtt_refresh_display(void) {
 #endif
 }
 
-#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
+#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE && CURRENT_NODE_ROLE != ROLE_CORRIDOR_NODE
 static void on_ir_state_changed(int in_level, int out_level) {
     app_mqtt_refresh_display();
 }
@@ -82,16 +85,25 @@ static void subscribe_room_topics(const char *room_id) {
     snprintf(topic, sizeof(topic), TOPIC_ROOM_EVENT_RFID, room_id);
     esp_mqtt_client_subscribe(s_mqtt_client, topic, 1);
     ESP_LOGI(TAG, "OLED Node subscribed to RFID: %s", topic);
+#elif CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+    // Node Corridor dang ky topic nhan phan hoi dang ky the
+    char reg_topic[128];
+    snprintf(reg_topic, sizeof(reg_topic), TOPIC_CARD_REG_RESPONSE, s_mac_address);
+    esp_mqtt_client_subscribe(s_mqtt_client, reg_topic, 1);
+    ESP_LOGI(TAG, "Corridor Node subscribed to Registration Response: %s", reg_topic);
 #endif
 }
 
 static void send_provision_request(void) {
-    char payload_str[256];
+    char ts[30];
+    app_sntp_get_iso8601(ts, sizeof(ts));
+
+    char payload_str[320];
     snprintf(payload_str, sizeof(payload_str),
-        "{\"message_id\":\"msg-%lld\",\"source_timestamp\":\"2026-09-21T00:00:00Z\","
+        "{\"message_id\":\"msg-%lld\",\"source_timestamp\":\"%s\","
         "\"payload\":{\"mac_address\":\"%s\",\"firmware_version\":\"1.0.0\","
         "\"hardware_revision\":\"ESP32-WROOM-32D\",\"device_type\":\"ESP32_NODE\"}}",
-        esp_timer_get_time() / 1000, s_mac_address);
+        esp_timer_get_time() / 1000, ts, s_mac_address);
 
     esp_mqtt_client_publish(s_mqtt_client, TOPIC_PROVISION_REQUEST, payload_str, 0, 1, 0);
     ESP_LOGI(TAG, "Sent Provisioning Request for MAC: %s", s_mac_address);
@@ -101,18 +113,21 @@ static void send_command_ack(const char *command_id, bool success, const char *e
     char topic[128];
     snprintf(topic, sizeof(topic), TOPIC_COMMAND_ACK, s_mac_address, command_id);
 
-    char payload_str[256];
+    char ts[30];
+    app_sntp_get_iso8601(ts, sizeof(ts));
+
+    char payload_str[320];
     snprintf(payload_str, sizeof(payload_str),
-        "{\"message_id\":\"ack-%lld\",\"source_timestamp\":\"2026-09-21T00:00:00Z\","
+        "{\"message_id\":\"ack-%lld\",\"source_timestamp\":\"%s\","
         "\"payload\":{\"mac_address\":\"%s\",\"command_id\":\"%s\","
         "\"success\":%s,\"error_message\":\"%s\"}}",
-        esp_timer_get_time() / 1000, s_mac_address, command_id, success ? "true" : "false", err_msg ? err_msg : "");
+        esp_timer_get_time() / 1000, ts, s_mac_address, command_id, success ? "true" : "false", err_msg ? err_msg : "");
 
     esp_mqtt_client_publish(s_mqtt_client, topic, payload_str, 0, 1, 0);
     ESP_LOGI(TAG, "Sent ACK for command: %s", command_id);
 }
 
-#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
+#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE && CURRENT_NODE_ROLE != ROLE_CORRIDOR_NODE
 // Callback khi co nguoi buoc qua cua (FR-SD-02)
 static void on_occupancy_detected(occupancy_dir_t dir) {
     if (dir == OCCUPANCY_IN) {
@@ -130,12 +145,15 @@ static void on_occupancy_detected(occupancy_dir_t dir) {
         char topic[128];
         snprintf(topic, sizeof(topic), TOPIC_ROOM_TELEMETRY_OCC, s_room_id);
 
+        char ts[30];
+        app_sntp_get_iso8601(ts, sizeof(ts));
+
         const char *dir_str = (dir == OCCUPANCY_IN) ? "IN" : "OUT";
-        char payload[256];
+        char payload[320];
         snprintf(payload, sizeof(payload),
-            "{\"message_id\":\"occ-%lld\",\"source_timestamp\":\"2026-09-27T00:00:00Z\","
+            "{\"message_id\":\"occ-%lld\",\"source_timestamp\":\"%s\","
             "\"payload\":{\"room_id\":\"%s\",\"occupancy_type\":\"%s\",\"occupancy_count\":%d}}",
-            esp_timer_get_time() / 1000, s_room_id, dir_str, s_occupancy_count);
+            esp_timer_get_time() / 1000, ts, s_room_id, dir_str, s_occupancy_count);
 
         esp_mqtt_client_publish(s_mqtt_client, topic, payload, 0, 1, 0);
         ESP_LOGI(TAG, "Published Occupancy %s to topic %s", dir_str, topic);
@@ -145,7 +163,9 @@ static void on_occupancy_detected(occupancy_dir_t dir) {
 
     app_mqtt_refresh_display();
 }
+#endif
 
+#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
 // Callback khi quet the RFID (FR-SD-04)
 static void on_rfid_card_scanned(const char *card_uid) {
     static char s_prev_card[32] = {0};
@@ -161,23 +181,53 @@ static void on_rfid_card_scanned(const char *card_uid) {
     s_prev_tap_ms = now_ms;
 
     strncpy(s_last_card, card_uid, sizeof(s_last_card) - 1);
+
+#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+    // Node Hanh lang: Quet the gui yeu cau dang ky / luu DB pending neu chua dang ky
+    buzzer_play(BUZZER_PATTERN_DOUBLE);
+    rgb_led_set_color(40, 20, 0); // Vang cam: Dang cho duyet tren DB
+
+    oled_display_corridor(card_uid, "CHO DUYET (PENDING)", "DANG GUI REQUEST...");
+
+    if (s_mqtt_connected) {
+        char ts[30];
+        app_sntp_get_iso8601(ts, sizeof(ts));
+
+        char payload[384];
+        snprintf(payload, sizeof(payload),
+            "{\"message_id\":\"reg-%lld\",\"source_timestamp\":\"%s\","
+            "\"payload\":{\"mac_address\":\"%s\",\"card_uid\":\"%s\","
+            "\"room_id\":\"%s\",\"status\":\"pending\",\"node_role\":\"corridor\","
+            "\"note\":\"Tapped at Corridor RFID Station\"}}",
+            esp_timer_get_time() / 1000, ts, s_mac_address, card_uid, s_room_id);
+
+        esp_mqtt_client_publish(s_mqtt_client, TOPIC_CARD_REG_REQUEST, payload, 0, 1, 0);
+        ESP_LOGI(TAG, "Published Card Registration Request: UID=%s to %s", card_uid, TOPIC_CARD_REG_REQUEST);
+    } else {
+        ESP_LOGW(TAG, "MQTT not connected, cannot publish registration request");
+    }
+#else
     buzzer_play(BUZZER_PATTERN_SHORT);
 
     if (s_mqtt_connected && strlen(s_room_id) > 0) {
         char topic[128];
         snprintf(topic, sizeof(topic), TOPIC_ROOM_EVENT_RFID, s_room_id);
 
-        char payload[256];
+        char ts[30];
+        app_sntp_get_iso8601(ts, sizeof(ts));
+
+        char payload[320];
         snprintf(payload, sizeof(payload),
-            "{\"message_id\":\"rfid-%lld\",\"source_timestamp\":\"2026-09-21T00:00:00Z\","
+            "{\"message_id\":\"rfid-%lld\",\"source_timestamp\":\"%s\","
             "\"payload\":{\"room_id\":\"%s\",\"card_uid\":\"%s\",\"event_type\":\"check_in\"}}",
-            esp_timer_get_time() / 1000, s_room_id, card_uid);
+            esp_timer_get_time() / 1000, ts, s_room_id, card_uid);
 
         esp_mqtt_client_publish(s_mqtt_client, topic, payload, 0, 1, 0);
         ESP_LOGI(TAG, "Published RFID card tap: %s", card_uid);
     }
 
     app_mqtt_refresh_display();
+#endif
 }
 #endif
 
@@ -340,6 +390,35 @@ static void handle_mqtt_message(const char *topic, int topic_len, const char *da
             app_mqtt_refresh_display();
         }
     }
+    // 8. Nhan phan hoi dang ky the RFID (Duyet the tai hanh lang)
+    else if (strstr(t, "/card/registration/response/") != NULL) {
+        cJSON *j_card = cJSON_GetObjectItem(payload, "card_uid");
+        cJSON *j_stat = cJSON_GetObjectItem(payload, "status");
+        cJSON *j_name = cJSON_GetObjectItem(payload, "assigned_user_name");
+        cJSON *j_msg = cJSON_GetObjectItem(payload, "message");
+
+        const char *card = (j_card && j_card->valuestring) ? j_card->valuestring : s_last_card;
+        const char *stat = (j_stat && j_stat->valuestring) ? j_stat->valuestring : "pending";
+        const char *info = (j_name && j_name->valuestring) ? j_name->valuestring : ((j_msg && j_msg->valuestring) ? j_msg->valuestring : "");
+
+        ESP_LOGI(TAG, "Registration Response: Card=%s, Status=%s, Info=%s", card, stat, info);
+
+#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+        if (strcasecmp(stat, "approved") == 0 || strcasecmp(stat, "registered") == 0) {
+            oled_display_corridor(card, "DA DUYET / OK", info);
+            rgb_led_set_color(0, 40, 0); // Xanh la: The da duoc gán & kích hoat
+            buzzer_play(BUZZER_PATTERN_SHORT);
+        } else if (strcasecmp(stat, "rejected") == 0) {
+            oled_display_corridor(card, "TU CHOI", info);
+            rgb_led_set_color(40, 0, 0); // Do: The bi tu choi
+            buzzer_play(BUZZER_PATTERN_LONG);
+        } else { // pending
+            oled_display_corridor(card, "CHO DUYET (PENDING)", info);
+            rgb_led_set_color(40, 20, 0); // Vang cam: Dang cho admin duyet
+            buzzer_play(BUZZER_PATTERN_DOUBLE);
+        }
+#endif
+    }
 
     cJSON_Delete(root);
 }
@@ -358,6 +437,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             char dev_cmd_topic[128];
             snprintf(dev_cmd_topic, sizeof(dev_cmd_topic), TOPIC_DEVICE_COMMAND, s_mac_address);
             esp_mqtt_client_subscribe(s_mqtt_client, dev_cmd_topic, 1);
+
+#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+            char card_resp[128];
+            snprintf(card_resp, sizeof(card_resp), TOPIC_CARD_REG_RESPONSE, s_mac_address);
+            esp_mqtt_client_subscribe(s_mqtt_client, card_resp, 1);
+            ESP_LOGI(TAG, "Corridor Node subscribed to: %s", card_resp);
+#endif
 
             if (strlen(s_room_id) > 0) {
                 subscribe_room_topics(s_room_id);
@@ -397,11 +483,14 @@ static void heartbeat_task(void *pvParameters) {
         uptime_sec += HEARTBEAT_INTERVAL_SEC;
 
         if (s_mqtt_connected) {
-            char payload[256];
+            char ts[30];
+            app_sntp_get_iso8601(ts, sizeof(ts));
+
+            char payload[320];
             snprintf(payload, sizeof(payload),
-                "{\"message_id\":\"hb-%lld\",\"source_timestamp\":\"2026-09-21T00:00:00Z\","
+                "{\"message_id\":\"hb-%lld\",\"source_timestamp\":\"%s\","
                 "\"payload\":{\"device_id\":\"%s\",\"alive\":true,\"firmware_version\":\"1.0.0\",\"uptime\":%lu}}",
-                esp_timer_get_time() / 1000,
+                esp_timer_get_time() / 1000, ts,
                 strlen(s_device_id) > 0 ? s_device_id : s_mac_address,
                 (unsigned long)uptime_sec);
 
@@ -410,7 +499,7 @@ static void heartbeat_task(void *pvParameters) {
     }
 }
 
-#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
+#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE && CURRENT_NODE_ROLE != ROLE_CORRIDOR_NODE
 // Task do luong va gui du lieu moi truong (DHT22 + MQ-2 + MQ-135)
 static void telemetry_task(void *pvParameters) {
     dht22_data_t dht;
@@ -431,13 +520,16 @@ static void telemetry_task(void *pvParameters) {
             char topic[128];
             snprintf(topic, sizeof(topic), TOPIC_ROOM_TELEMETRY_ENV, s_room_id);
 
-            char payload[384];
+            char ts[30];
+            app_sntp_get_iso8601(ts, sizeof(ts));
+
+            char payload[448];
             snprintf(payload, sizeof(payload),
-                "{\"message_id\":\"env-%lld\",\"source_timestamp\":\"2026-09-21T00:00:00Z\","
+                "{\"message_id\":\"env-%lld\",\"source_timestamp\":\"%s\","
                 "\"payload\":{\"room_id\":\"%s\",\"temperature\":%.1f,\"humidity\":%.1f,"
                 "\"smoke_detected\":%s,\"smoke_value\":%.1f,\"smoke_threshold\":1400.0,"
                 "\"smoke_state\":\"%s\",\"co2\":%d,\"air_quality\":%d}}",
-                esp_timer_get_time() / 1000, s_room_id,
+                esp_timer_get_time() / 1000, ts, s_room_id,
                 s_last_temp, s_last_hum,
                 mq.smoke_detected ? "true" : "false",
                 mq.smoke_raw,
@@ -463,6 +555,13 @@ void app_mqtt_start(void) {
         ESP_LOGI(TAG, "Loaded device_id from NVS: %s", s_device_id);
     }
 
+    // F1 fix: Doc MQTT credentials tu NVS (fallback ve DEFAULT_)
+    static char mqtt_uri[128];
+    static char mqtt_pass[64];
+    app_nvs_get_mqtt_uri(mqtt_uri, sizeof(mqtt_uri));
+    app_nvs_get_mqtt_pass(mqtt_pass, sizeof(mqtt_pass));
+    ESP_LOGI(TAG, "MQTT broker URI: %s (from NVS/default)", mqtt_uri);
+
     static char lwt_topic[128];
     snprintf(lwt_topic, sizeof(lwt_topic), TOPIC_DEVICE_STATUS, s_mac_address);
     static char lwt_msg[256];
@@ -474,10 +573,10 @@ void app_mqtt_start(void) {
     snprintf(client_id_str, sizeof(client_id_str), "%s_%s", MQTT_CLIENT_PREFIX, s_mac_address);
 
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = MQTT_BROKER_URI,
+        .broker.address.uri = mqtt_uri,
         .credentials.client_id = client_id_str,
         .credentials.username = MQTT_USERNAME,
-        .credentials.authentication.password = MQTT_PASSWORD,
+        .credentials.authentication.password = mqtt_pass,
         .session.last_will = {
             .topic = lwt_topic,
             .msg = lwt_msg,
@@ -491,8 +590,11 @@ void app_mqtt_start(void) {
     esp_mqtt_client_register_event(s_mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(s_mqtt_client);
 
-#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
-    // Kich hoat cac sensors ngoai vi chi tren Node IR
+#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+    // Node Hanh lang chi can khoi tao RC522 de quet the RFID dang ky
+    rc522_init(on_rfid_card_scanned);
+#elif CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
+    // Kich hoat cac sensors ngoai vi chi tren Node IR / Sensor
     ir_occupancy_init(on_occupancy_detected, on_ir_state_changed);
     rc522_init(on_rfid_card_scanned);
     xTaskCreate(telemetry_task, "telemetry_task", 3072, NULL, 5, NULL);
