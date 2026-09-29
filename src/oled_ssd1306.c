@@ -228,3 +228,37 @@ void oled_display_status(const char *room_mode, float temp, float hum, const cha
     oled_update_screen();
     if (s_oled_mutex) xSemaphoreGive(s_oled_mutex);
 }
+
+void oled_display_corridor(const char *card_uid, const char *status_str, const char *user_info) {
+    if (s_oled_mutex) xSemaphoreTake(s_oled_mutex, portMAX_DELAY);
+    memset(s_buffer, 0, sizeof(s_buffer));
+
+    // Dong 0: Tieu de node hanh lang
+    oled_draw_string(4, 0, "=== CORRIDOR NODE ===");
+
+    // Dong 2: Thong tin the hoac huong dan
+    if (card_uid && strlen(card_uid) > 0) {
+        char line[32];
+        snprintf(line, sizeof(line), "UID: %s", card_uid);
+        oled_draw_string(0, 2, line);
+    } else {
+        oled_draw_string(0, 2, "QUET THE DANG KY");
+    }
+
+    // Dong 4: Trang thai (PENDING / APPROVED / REJECTED)
+    char line_status[32];
+    snprintf(line_status, sizeof(line_status), "ST: %s", (status_str && strlen(status_str) > 0) ? status_str : "SAN SANG");
+    oled_draw_string(0, 4, line_status);
+
+    // Dong 6: Thong tin nguoi dung hoac huong dan he thong
+    if (user_info && strlen(user_info) > 0) {
+        char line_info[32];
+        snprintf(line_info, sizeof(line_info), "INFO: %s", user_info);
+        oled_draw_string(0, 6, line_info);
+    } else {
+        oled_draw_string(0, 6, "HE THONG SMARTCAMPUS");
+    }
+
+    oled_update_screen();
+    if (s_oled_mutex) xSemaphoreGive(s_oled_mutex);
+}

@@ -6,8 +6,9 @@
 #define ROLE_FULL_NODE          0   // 1 bo mạch duy nhất gánh toàn bộ (Cảm biến + OLED + Servo)
 #define ROLE_IR_SENSOR_NODE     1   // Bo mạch 1: Chuyên cảm biến IR đếm người, DHT22, MQ-2, RC522
 #define ROLE_OLED_DISPLAY_NODE  2   // Bo mạch 2: Chuyên nhận telemetry qua MQTT và hiển thị OLED (+ Servo)
+#define ROLE_CORRIDOR_NODE      3   // Bo mạch 3: Node hành lang - Quét RFID đăng ký thẻ chưa có UUID / Access control
 
-// 👉 ĐANG CẤU HÌNH CHO BO MẠCH 1 (IR SENSOR):
+// 👉 ĐANG CẤU HÌNH CHO BO MẠCH (ROLE_FULL_NODE / ROLE_IR_SENSOR_NODE / ROLE_OLED_DISPLAY_NODE / ROLE_CORRIDOR_NODE):
 #define CURRENT_NODE_ROLE       ROLE_IR_SENSOR_NODE
 
 #if CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
@@ -16,16 +17,27 @@
 #elif CURRENT_NODE_ROLE == ROLE_IR_SENSOR_NODE
   #define MQTT_USERNAME         "smartcampus_ir"
   #define MQTT_CLIENT_PREFIX    "ESP32_IR"
+#elif CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+  #define MQTT_USERNAME         "smartcampus_corridor"
+  #define MQTT_CLIENT_PREFIX    "ESP32_CORRIDOR"
 #else
   #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_FULL"
 #endif
 
-// ---------------- Wi-Fi & MQTT Broker Config (Hardcoded cho Docker) ----------------
-#define WIFI_SSID                   "P902"
-#define WIFI_PASSWORD               "Cntt@902"
-#define MQTT_BROKER_URI             "mqtt://192.168.1.143:1883" // IP Card Wi-Fi máy Windows chạy Docker/Bridge (192.168.1.143)
-#define MQTT_PASSWORD               "123456"
+// ---------------- Wi-Fi & MQTT Broker Config ----------------
+// Giá trị mặc định khi chưa cấu hình qua NVS.
+// Sử dụng app_nvs_get_wifi_ssid() / app_nvs_get_mqtt_uri() để đọc giá trị runtime.
+#define DEFAULT_WIFI_SSID           "P902"
+#define DEFAULT_WIFI_PASSWORD       "Cntt@902"
+#define DEFAULT_MQTT_BROKER_URI     "mqtt://192.168.1.143:1883" // IP Card Wi-Fi máy Windows chạy Docker/Bridge (192.168.1.143)
+#define DEFAULT_MQTT_PASSWORD       "123456"
+
+// Aliases tương thích ngược
+#define WIFI_SSID                   DEFAULT_WIFI_SSID
+#define WIFI_PASSWORD               DEFAULT_WIFI_PASSWORD
+#define MQTT_BROKER_URI             DEFAULT_MQTT_BROKER_URI
+#define MQTT_PASSWORD               DEFAULT_MQTT_PASSWORD
 
 // Phòng mặc định (Phòng 402 đã có sẵn trong Docker TimescaleDB)
 #define DEFAULT_ROOM_ID             "11111111-1111-1111-1111-111111111111"
@@ -51,9 +63,10 @@
 // Servo cửa SG90 (LEDC Channel 3)
 #define PIN_SERVO_DOOR              16
 
-// Quạt làm mát / thông gió DC 5V XD-4010 (LEDC Channel 4)
+// Quạt làm mát / thông gió DC 5V (2 dây: VCC + GND, điều khiển qua Transistor NPN/MOSFET)
 #define PIN_FAN                     14
 #define FAN_ACTIVE_HIGH             1       // 1: Mức cao (Transistor NPN / MOSFET), 0: Mức thấp (Relay Active LOW)
+#define FAN_2WIRE_GPIO              1       // 1: Quạt 2 dây (GPIO on/off), 0: Quạt 3-4 dây (PWM speed control via LEDC)
 
 // Còi Buzzer
 #define PIN_BUZZER                  13
@@ -79,6 +92,10 @@
 #define NVS_NAMESPACE               "smartcampus"
 #define NVS_KEY_ROOM_ID             "room_id"
 #define NVS_KEY_DEVICE_ID           "device_id"
+#define NVS_KEY_WIFI_SSID           "wifi_ssid"
+#define NVS_KEY_WIFI_PASS           "wifi_pass"
+#define NVS_KEY_MQTT_URI            "mqtt_uri"
+#define NVS_KEY_MQTT_PASS           "mqtt_pass"
 
 // ---------------- MQTT Topics Namespace ----------------
 #define TOPIC_PROVISION_REQUEST     "smartcampus/v1/device/provision/request"
@@ -92,3 +109,5 @@
 #define TOPIC_ROOM_STATE            "smartcampus/v1/room/%s/state"
 #define TOPIC_ROOM_COMMAND          "smartcampus/v1/command/room/%s"
 #define TOPIC_COMMAND_ACK           "smartcampus/v1/ack/device/%s/command/%s"
+#define TOPIC_CARD_REG_REQUEST      "smartcampus/v1/card/registration/request"
+#define TOPIC_CARD_REG_RESPONSE     "smartcampus/v1/card/registration/response/%s"
