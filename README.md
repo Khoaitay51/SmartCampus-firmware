@@ -11,12 +11,12 @@ Tất cả các chân được quy hoạch tối ưu, không xung đột chân n
 | STT | Thiết bị / Module | Chân thiết bị | Chân ESP32 | Ghi chú kỹ thuật |
 |:---:|---|---|:---:|---|
 | **1** | **RGB LED** | Chân Đỏ (R) | **GPIO 17** | PWM LEDC Ch 0 |
-| | | Chân Xanh lá (G) | **GPIO 18** | PWM LEDC Ch 1 |
-| | | Chân Xanh dương (B) | **GPIO 19** | PWM LEDC Ch 2 |
+| | | Chân Xanh lá (G) | **GPIO 26** | PWM LEDC Ch 1 *(Chuyển sang 26, tránh trùng VSPI SCK)* |
+| | | Chân Xanh dương (B) | **GPIO 25** | PWM LEDC Ch 2 *(Chuyển sang 25, tránh trùng VSPI MISO)* |
 | | | GND / VCC | **GND / 3.3V** | Cấu hình `RGB_LED_COMMON_ANODE` trong `app_config.h` |
-| **2** | **DHT22** | DATA | **GPIO 22** | Cần trở kéo lên (pull-up) 4.7kΩ - 10kΩ lên 3.3V |
-| | | VCC / GND | **3.3V / GND** | Đo nhiệt độ & độ ẩm |
-| **3** | **Cảm biến Khói MQ-2** | A0 (Analog Out) | **GPIO 34** | Kênh ADC1_CH6 (An toàn khi dùng Wi-Fi) |
+| **2** | **DHT22 (Nhiệt/Ẩm)** | DATA | **GPIO 27** | Single-bus Data *(Chuyển sang 27, nhường GPIO 22 cho I2C)*, cần trở pull-up 4.7kΩ - 10kΩ |
+| | | VCC / GND | **3.3V / GND** | Nguồn 3.3V ổn định |
+| **3** | **Cảm biến Khói MQ-2** | A0 (Analog Out) | **GPIO 34** | Kênh ADC1_CH6 (An toàn tuyệt đối khi dùng Wi-Fi) |
 | | | VCC / GND | **5V / GND** | Cần 5V để nung nóng sensor |
 | **4** | **Cảm biến Không khí MQ-135** | A0 (Analog Out) | **GPIO 35** | Kênh ADC1_CH7 (Đo CO2 & AQI) |
 | | | VCC / GND | **5V / GND** | Cần 5V để nung nóng sensor |
@@ -28,15 +28,19 @@ Tất cả các chân được quy hoạch tối ưu, không xung đột chân n
 | | | GND (-) | **GND** | |
 | **8** | **Servo Motor SG90 (Cửa)** | Dây Cam (PWM) | **GPIO 16** | Tín hiệu PWM điều khiển chốt cửa |
 | | | Dây Đỏ / Nâu | **5V / GND** | Nguồn 5V |
-| **9** | **Màn hình OLED SSD1306** | SDA | **GPIO 21** | Giao tiếp I2C |
-| | | SCL | **GPIO 5** | Giao tiếp I2C |
-| | | VCC / GND | **3.3V / GND** | |
-| **10** | **Đầu đọc thẻ RFID RC522** | SDA (SS / CS) | **GPIO 27** | SPI Chip Select |
-| | | SCK | **GPIO 26** | SPI Clock |
-| | | MOSI | **GPIO 23** | SPI Master Out |
-| | | MISO | **GPIO 25** | SPI Master In |
-| | | RST | **GPIO 4** | Reset pin |
-| | | 3.3V / GND | **3.3V / GND** | **LƯU Ý: Tuyệt đối cấp 3.3V, không cấp 5V** |
+| **9** | **Quạt làm mát / thông gió (Fan)**| Control | **GPIO 14** | Điều khiển qua Transistor NPN / MOSFET / Relay |
+| | | VCC / GND | **5V / GND** | Nguồn quạt 5V |
+| **10** | **Màn hình OLED SSD1306** | SDA | **GPIO 21** | Giao tiếp I2C master mặc định của ESP32 |
+| | | SCL | **GPIO 22** | Giao tiếp I2C master mặc định của ESP32 *(Chuyển sang 22)* |
+| | | VCC / GND | **3.3V / GND** | Hiển thị trạng thái & telemetry |
+| **11** | **Đầu đọc thẻ RFID RC522** | SDA (SS / CS) | **GPIO 5** | **VSPI Hardware CS** *(Chuẩn phần cứng, chống dội xung)* |
+| | | SCK | **GPIO 18** | **VSPI Hardware SCK** (Xung clock 1 MHz) |
+| | | MOSI | **GPIO 23** | **VSPI Hardware MOSI** (Nối thẳng MOSI $\rightarrow$ MOSI) |
+| | | MISO | **GPIO 19** | **VSPI Hardware MISO** (Nối thẳng MISO $\rightarrow$ MISO, có pull-up) |
+| | | IRQ | *(Bỏ trống)* | Không cần nối |
+| | | GND | **GND** | Chân số 6 trên bo mạch RC522 |
+| | | RST | **GPIO 4 hoặc 3.3V** | Chân số 7 (Khuyên cắm thẳng 3.3V để chip luôn ON) |
+| | | 3.3V (VCC) | **3.3V** | Chân số 8 - **⚠️ LƯU Ý: Tuyệt đối cấp 3.3V, KHÔNG cấp 5V** |
 
 ---
 

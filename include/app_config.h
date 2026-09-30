@@ -42,15 +42,15 @@
 // Phòng mặc định (Phòng 402 đã có sẵn trong Docker TimescaleDB)
 #define DEFAULT_ROOM_ID             "11111111-1111-1111-1111-111111111111"
 
-// ---------------- Hardware Pinout ----------------
+// ---------------- Hardware Pinout (Tối ưu tuyệt đối, không xung đột) ----------------
 // RGB LED (LEDC Channels 0, 1, 2)
-#define PIN_LED_RED                 17
-#define PIN_LED_GREEN               18
-#define PIN_LED_BLUE                19
+#define PIN_LED_RED                 17      // PWM LEDC Ch 0
+#define PIN_LED_GREEN               26      // PWM LEDC Ch 1 (Chuyển sang 26, tránh trùng VSPI SCK 18)
+#define PIN_LED_BLUE                25      // PWM LEDC Ch 2 (Chuyển sang 25, tránh trùng VSPI MISO 19)
 #define RGB_LED_COMMON_ANODE        0       // 0: Cathode chung (GND), 1: Anode chung (3.3V)
 
 // DHT22 (Nhiệt độ & Độ ẩm)
-#define PIN_DHT22                   22
+#define PIN_DHT22                   27      // Single-bus Data (Chuyển sang 27, nhường GPIO 22 làm I2C SCL chuẩn)
 
 // MQ-2 (Khói) & MQ-135 (Air Quality / CO2) - Sử dụng ADC1 (Không bị ngắt khi dùng Wi-Fi)
 #define PIN_MQ2_ADC                 34      // ADC1_CHANNEL_6
@@ -72,17 +72,17 @@
 #define PIN_BUZZER                  13
 #define BUZZER_ACTIVE_LOW           1       // 1: Kích mức thấp (Active LOW - phổ biến), 0: Kích mức cao (Active HIGH)
 
-// Màn hình OLED SSD1306 (I2C)
-#define PIN_OLED_SDA                21
-#define PIN_OLED_SCL                5
+// Màn hình OLED SSD1306 (I2C chuẩn phần cứng ESP32)
+#define PIN_OLED_SDA                21      // I2C SDA mặc định
+#define PIN_OLED_SCL                22      // I2C SCL mặc định (Chuyển sang 22, tránh trùng VSPI CS 5)
 #define OLED_I2C_ADDR               0x3C
 
-// Đầu đọc thẻ RFID RC522 (SPI)
-#define PIN_RC522_SCK               26
-#define PIN_RC522_MOSI              23
-#define PIN_RC522_MISO              25
-#define PIN_RC522_CS                27      // Chân SDA/SS trên module RC522
-#define PIN_RC522_RST               4
+// Đầu đọc thẻ RFID RC522 (VSPI chuẩn phần cứng ESP32 - Ổn định tối đa)
+#define PIN_RC522_CS                5       // Chân SDA/SS trên module RC522 (VSPI CS)
+#define PIN_RC522_SCK               18      // VSPI SCK
+#define PIN_RC522_MOSI              23      // VSPI MOSI (Nối thẳng MOSI -> MOSI)
+#define PIN_RC522_MISO              19      // VSPI MISO (Nối thẳng MISO -> MISO)
+#define PIN_RC522_RST               4       // Hardware Reset (hoặc cắm thẳng vào 3.3V)
 
 // ---------------- Timing Intervals ----------------
 #define SENSOR_READ_INTERVAL_MS     2000    // Đọc & publish DHT22 + Khói mỗi 2s (FR-SD-01, FR-SD-03)

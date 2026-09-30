@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
 
 /**
  * @brief Khởi tạo SNTP client để đồng bộ thời gian thực từ Internet.

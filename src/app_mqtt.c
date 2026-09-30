@@ -27,7 +27,7 @@ static const char *TAG = "APP_MQTT";
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static bool s_mqtt_connected = false;
 static char s_mac_address[18] = {0};
-static char s_room_id[40] = {0};
+static char s_room_id[40] = DEFAULT_ROOM_ID;
 static char s_device_id[40] = {0};
 static char s_last_mode[24] = "SAVING";
 static char s_last_card[32] = "";
@@ -167,7 +167,7 @@ static void on_occupancy_detected(occupancy_dir_t dir) {
 
 #if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
 // Callback khi quet the RFID (FR-SD-04)
-static void on_rfid_card_scanned(const char *card_uid) {
+void app_mqtt_on_rfid_card_scanned(const char *card_uid) {
     static char s_prev_card[32] = {0};
     static int64_t s_prev_tap_ms = 0;
     int64_t now_ms = esp_timer_get_time() / 1000;
@@ -204,7 +204,7 @@ static void on_rfid_card_scanned(const char *card_uid) {
         esp_mqtt_client_publish(s_mqtt_client, TOPIC_CARD_REG_REQUEST, payload, 0, 1, 0);
         ESP_LOGI(TAG, "Published Card Registration Request: UID=%s to %s", card_uid, TOPIC_CARD_REG_REQUEST);
     } else {
-        ESP_LOGW(TAG, "MQTT not connected, cannot publish registration request");
+        ESP_LOGW(TAG, "Card scanned (UID: %s), but MQTT not connected -> registration request queued/skipped", card_uid);
     }
 #else
     buzzer_play(BUZZER_PATTERN_SHORT);
@@ -224,6 +224,8 @@ static void on_rfid_card_scanned(const char *card_uid) {
 
         esp_mqtt_client_publish(s_mqtt_client, topic, payload, 0, 1, 0);
         ESP_LOGI(TAG, "Published RFID card tap: %s", card_uid);
+    } else {
+        ESP_LOGW(TAG, "Card scanned (UID: %s), but MQTT not connected -> registered locally on OLED & Buzzer", card_uid);
     }
 
     app_mqtt_refresh_display();
@@ -590,13 +592,9 @@ void app_mqtt_start(void) {
     esp_mqtt_client_register_event(s_mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(s_mqtt_client);
 
-#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
-    // Node Hanh lang chi can khoi tao RC522 de quet the RFID dang ky
-    rc522_init(on_rfid_card_scanned);
-#elif CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
-    // Kich hoat cac sensors ngoai vi chi tren Node IR / Sensor
+#if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE && CURRENT_NODE_ROLE != ROLE_CORRIDOR_NODE
+    // Kich hoat IR va telemetry tasks tren Node IR / Sensor
     ir_occupancy_init(on_occupancy_detected, on_ir_state_changed);
-    rc522_init(on_rfid_card_scanned);
     xTaskCreate(telemetry_task, "telemetry_task", 3072, NULL, 5, NULL);
 #endif
 
