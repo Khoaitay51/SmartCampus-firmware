@@ -10,6 +10,7 @@
 
 static const char *TAG = "APP_WIFI";
 static EventGroupHandle_t s_wifi_event_group;
+static char s_ip_str[24] = "0.0.0.0";
 #define WIFI_CONNECTED_BIT BIT0
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
@@ -18,11 +19,13 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t* disconn = (wifi_event_sta_disconnected_t*) event_data;
         ESP_LOGW(TAG, "Disconnected from Wi-Fi (reason: %d), reconnecting...", disconn ? disconn->reason : 0);
+        strncpy(s_ip_str, "0.0.0.0", sizeof(s_ip_str));
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Got IP: %s", s_ip_str);
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -81,3 +84,10 @@ void app_wifi_get_mac_str(char *mac_str) {
     snprintf(mac_str, 18, "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
+
+void app_wifi_get_ip_str(char *ip_str, size_t max_len) {
+    if (!ip_str || max_len == 0) return;
+    strncpy(ip_str, s_ip_str, max_len - 1);
+    ip_str[max_len - 1] = '\0';
+}
+

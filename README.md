@@ -46,26 +46,32 @@ Tất cả các chân được quy hoạch tối ưu, không xung đột chân n
 
 ## ⚙️ Cấu hình Vai trò Node (Node Roles) & Mạng
 
-Trong [`include/app_config.h`](include/app_config.h), chọn vai trò phù hợp cho bo mạch bằng cách đổi giá trị `CURRENT_NODE_ROLE`:
+Hệ thống được quy hoạch gồm **2 Room Node** (Phòng 1 & Phòng 2) và **1 Corridor Node** (Node Hành lang):
+
+Trong [`include/app_config.h`](include/app_config.h), chọn vai trò bo mạch cần nạp bằng cách đổi giá trị `CURRENT_NODE_ROLE`:
 
 ```c
-#define ROLE_FULL_NODE          0   // 1 bo mạch duy nhất gánh toàn bộ (Cảm biến + OLED + Servo)
-#define ROLE_IR_SENSOR_NODE     1   // Bo mạch 1: Chuyên cảm biến IR đếm người, DHT22, MQ-2, RC522
-#define ROLE_OLED_DISPLAY_NODE  2   // Bo mạch 2: Chuyên nhận telemetry qua MQTT và hiển thị OLED (+ Servo)
-#define ROLE_CORRIDOR_NODE      3   // Bo mạch 3: Node Hành lang - Quét thẻ RFID đăng ký thẻ chưa có UUID / Access control
+#define ROLE_ROOM_NODE_1        1   // Bo mạch Phòng 1: Cảm biến (DHT22, MQ-2, MQ-135), IR Occupancy, OLED, RFID, Servo, Fan
+#define ROLE_ROOM_NODE_2        2   // Bo mạch Phòng 2: Cảm biến (DHT22, MQ-2, MQ-135), IR Occupancy, OLED, RFID, Servo, Fan
+#define ROLE_CORRIDOR_NODE      3   // Bo mạch Hành lang: Quét RFID đăng ký thẻ + OLED + RGB LED + Buzzer
 
-#define CURRENT_NODE_ROLE       ROLE_IR_SENSOR_NODE
+// 👉 Chọn vai trò muốn nạp cho ESP32 hiện tại:
+#define CURRENT_NODE_ROLE       ROLE_ROOM_NODE_1
 ```
 
-### Chi tiết Node Hành lang (`ROLE_CORRIDOR_NODE`):
-- **Mục đích**: Đặt tại khu vực hành lang / sảnh sinh viên để quét thẻ RFID.
-- **Nghiệp vụ**:
-  - Khi quét thẻ chưa có trong hệ thống (`card_uid` chưa gắn `user_id`), ESP32 gửi gói tin lên topic `smartcampus/v1/card/registration/request` với trạng thái `pending`.
-  - Màn hình OLED hiển thị: `UID: <card_uid>` kèm dòng thông báo `ST: CHO DUYET (PENDING)`.
-  - Đèn RGB LED chuyển màu **Vàng cam**, còi Buzzer phát 2 tiếng beep ngắn xác nhận đã gửi yêu cầu.
-  - Khi Admin phê duyệt (`APPROVED`) hoặc từ chối (`REJECTED`) trên hệ thống, Edge Gateway gửi tin nhắn phản hồi về topic `smartcampus/v1/card/registration/response/{mac_address}`:
-    - `APPROVED`: OLED hiển thị tên người dùng và `ST: DA DUYET / OK`, LED đổi sang **Xanh lá**, còi kêu 1 tiếng beep ngắn.
-    - `REJECTED`: OLED hiển thị `ST: TU CHOI`, LED đổi sang **Đỏ**, còi hú dài báo lỗi.
+### Chi tiết các Node trong hệ thống:
+1. **Room Node 1 (`ROLE_ROOM_NODE_1`)**:
+   - Vị trí: Phòng học 1 (Room ID mặc định: `11111111-1111-1111-1111-111111111111`).
+   - Màn hình OLED: Header đảo màu `ROOM 1    W:OK M:OK`, Chế độ phòng, Cửa, Quạt, Nhiệt độ/Độ ẩm, Khói, Số người, 2 mắt IR, Thẻ RFID điểm danh.
+   - Ngoại vi: DHT22, MQ-2, MQ-135, IR vào/ra, RC522, OLED SSD1306, SG90 Servo, Quạt DC, RGB LED, Buzzer.
+2. **Room Node 2 (`ROLE_ROOM_NODE_2`)**:
+   - Vị trí: Phòng học 2 (Room ID mặc định: `22222222-2222-2222-2222-222222222222`).
+   - Màn hình OLED: Header đảo màu `ROOM 2    W:OK M:OK`, telemetry và trạng thái tương tự Room 1.
+   - Ngoại vi: Đầy đủ cảm biến và cơ cấu chấp hành phòng học.
+3. **Corridor Node (`ROLE_CORRIDOR_NODE`)**:
+   - Vị trí: Sảnh sinh viên / Khu vực hành lang phục vụ đăng ký & xác thực thẻ RFID.
+   - Màn hình OLED: Header đảo màu `CORRIDOR  W:OK M:OK`, giao diện đăng ký thẻ chuyên dụng (`UID`, `ST: CHO DUYET / DA DUYET / TU CHOI`, `INFO`, `MAC / IP`).
+   - Nghiệp vụ: Khi quét thẻ chưa gắn sinh viên, ESP32 gửi request lên `smartcampus/v1/card/registration/request`. Khi Admin duyệt hoặc từ chối, ESP32 nhận phản hồi qua topic `smartcampus/v1/card/registration/response/{mac_address}`, OLED hiển thị kết quả kèm phản hồi LED và còi.
 
 ---
 
@@ -104,5 +110,6 @@ idf.py -p COMx flash monitor   # Trên Windows (thay COMx tương ứng)
    - `SUSPECTED`: LED cam thở (`#FF8C00` Breathe).
    - `EMERGENCY`: LED đỏ chớp nháy dồn dập (`#FF0000` Strobe), Servo lập tức mở toang cửa, Buzzer hú liên tục.
 6. **Màn hình OLED SSD1306 (FR-AC-05)**:
-   - Trên Node Phòng học: Hiển thị chế độ phòng, Nhiệt độ/Độ ẩm, Chốt cửa, Mã thẻ gần nhất.
-   - Trên Node Hành lang: Hiển thị giao diện đăng ký thẻ chuyên dụng (`=== CORRIDOR NODE ===`, `UID`, `ST: CHO DUYET`, `INFO`).
+   - **Giao diện Boot**: Báo từng bước khởi động phần cứng, kết nối Wi-Fi (kèm IP nhận được), đồng bộ giờ SNTP và MQTT.
+   - **Giao diện Room Node**: Header đảo màu thanh trạng thái (`[ROOM X] W:OK M:OK`), Chế độ phòng (`MODE: LECTURE`), Trạng thái cửa (`D:LOCK/OPEN`), Quạt, Cảm biến Nhiệt/Ẩm, Khói/Gas, Số người (`OCC: X [IR:1,1]`), Mã thẻ RFID vừa điểm danh.
+   - **Giao diện Corridor Node**: Header đảo màu (`[CORRIDOR] W:OK M:OK`), Trạng thái đăng ký (`CHO DUYET / DA DUYET / TU CHOI`), Mã thẻ `UID`, Tên sinh viên `INFO`, Địa chỉ MAC / IP thiết bị.

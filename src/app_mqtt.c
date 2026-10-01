@@ -31,8 +31,16 @@ static char s_room_id[40] = DEFAULT_ROOM_ID;
 static char s_device_id[40] = {0};
 static char s_last_mode[24] = "SAVING";
 static char s_last_card[32] = "";
+static char s_card_status[32] = "SAN SANG";
+#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+static char s_corridor_info[32] = "QUET THE DANG KY";
+#endif
 static float s_last_temp = 25.0f;
 static float s_last_hum = 60.0f;
+#if CURRENT_NODE_ROLE != ROLE_CORRIDOR_NODE
+static float s_last_smoke = 0.0f;
+static bool s_smoke_alarm = false;
+#endif
 static _Atomic int s_occupancy_count = 0;
 
 bool app_mqtt_is_connected(void) {
@@ -40,15 +48,30 @@ bool app_mqtt_is_connected(void) {
 }
 
 static void app_mqtt_refresh_display(void) {
+    bool wifi_ok = app_wifi_is_connected();
+    bool mqtt_ok = s_mqtt_connected;
+
 #if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
-    oled_display_corridor(s_last_card, "SAN SANG", "QUET THE DANG KY");
+    char ip_str[24];
+    app_wifi_get_ip_str(ip_str, sizeof(ip_str));
+    oled_display_corridor(NODE_ROLE_NAME, wifi_ok, mqtt_ok,
+                          s_last_card, s_card_status, s_corridor_info,
+                          wifi_ok ? ip_str : s_mac_address);
 #elif CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
-    oled_display_status(s_last_mode, s_last_temp, s_last_hum, s_last_card, 
-                        servo_door_is_locked(), s_occupancy_count, 1, 1);
+    oled_display_room(NODE_ROLE_NAME, s_last_mode, wifi_ok, mqtt_ok,
+                      s_last_temp, s_last_hum,
+                      fan_control_is_on(), fan_control_get_speed(),
+                      servo_door_is_locked(), s_occupancy_count,
+                      1, 1, s_last_smoke, s_smoke_alarm,
+                      s_last_card, s_card_status);
 #else
-    oled_display_status(s_last_mode, s_last_temp, s_last_hum, s_last_card, 
-                        servo_door_is_locked(), s_occupancy_count, 
-                        ir_get_in_level(), ir_get_out_level());
+    oled_display_room(NODE_ROLE_NAME, s_last_mode, wifi_ok, mqtt_ok,
+                      s_last_temp, s_last_hum,
+                      fan_control_is_on(), fan_control_get_speed(),
+                      servo_door_is_locked(), s_occupancy_count,
+                      ir_get_in_level(), ir_get_out_level(),
+                      s_last_smoke, s_smoke_alarm,
+                      s_last_card, s_card_status);
 #endif
 }
 
@@ -187,7 +210,9 @@ void app_mqtt_on_rfid_card_scanned(const char *card_uid) {
     buzzer_play(BUZZER_PATTERN_DOUBLE);
     rgb_led_set_color(40, 20, 0); // Vang cam: Dang cho duyet tren DB
 
-    oled_display_corridor(card_uid, "CHO DUYET (PENDING)", "DANG GUI REQUEST...");
+    strncpy(s_card_status, "CHO DUYET (PENDING)", sizeof(s_card_status) - 1);
+    strncpy(s_corridor_info, "DANG GUI REQUEST...", sizeof(s_corridor_info) - 1);
+    app_mqtt_refresh_display();
 
     if (s_mqtt_connected) {
         char ts[30];
@@ -208,6 +233,7 @@ void app_mqtt_on_rfid_card_scanned(const char *card_uid) {
     }
 #else
     buzzer_play(BUZZER_PATTERN_SHORT);
+    strncpy(s_card_status, "CHECK-IN OK", sizeof(s_card_status) - 1);
 
     if (s_mqtt_connected && strlen(s_room_id) > 0) {
         char topic[128];
@@ -407,18 +433,22 @@ static void handle_mqtt_message(const char *topic, int topic_len, const char *da
 
 #if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
         if (strcasecmp(stat, "approved") == 0 || strcasecmp(stat, "registered") == 0) {
-            oled_display_corridor(card, "DA DUYET / OK", info);
+            strncpy(s_card_status, "DA DUYET / OK", sizeof(s_card_status) - 1);
+            strncpy(s_corridor_info, info, sizeof(s_corridor_info) - 1);
             rgb_led_set_color(0, 40, 0); // Xanh la: The da duoc gán & kích hoat
             buzzer_play(BUZZER_PATTERN_SHORT);
         } else if (strcasecmp(stat, "rejected") == 0) {
-            oled_display_corridor(card, "TU CHOI", info);
+            strncpy(s_card_status, "TU CHOI", sizeof(s_card_status) - 1);
+            strncpy(s_corridor_info, info, sizeof(s_corridor_info) - 1);
             rgb_led_set_color(40, 0, 0); // Do: The bi tu choi
             buzzer_play(BUZZER_PATTERN_LONG);
         } else { // pending
-            oled_display_corridor(card, "CHO DUYET (PENDING)", info);
+            strncpy(s_card_status, "CHO DUYET (PENDING)", sizeof(s_card_status) - 1);
+            strncpy(s_corridor_info, info, sizeof(s_corridor_info) - 1);
             rgb_led_set_color(40, 20, 0); // Vang cam: Dang cho admin duyet
             buzzer_play(BUZZER_PATTERN_DOUBLE);
         }
+        app_mqtt_refresh_display();
 #endif
     }
 
@@ -431,6 +461,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "Connected to MQTT Broker");
             s_mqtt_connected = true;
+            app_mqtt_refresh_display();
 
             char prov_topic[128];
             snprintf(prov_topic, sizeof(prov_topic), TOPIC_PROVISION_RESPONSE, s_mac_address);
@@ -457,6 +488,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "Disconnected from MQTT Broker");
             s_mqtt_connected = false;
+            app_mqtt_refresh_display();
             break;
 
         case MQTT_EVENT_ERROR:
@@ -515,6 +547,8 @@ static void telemetry_task(void *pvParameters) {
             s_last_hum = dht.humidity;
         }
         mq_sensor_read(&mq);
+        s_last_smoke = mq.smoke_raw;
+        s_smoke_alarm = mq.smoke_detected;
 
         app_mqtt_refresh_display();
 

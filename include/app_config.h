@@ -3,24 +3,44 @@
 #include <stdint.h>
 
 // ---------------- Node Roles (Cấu hình vai trò cho từng bo mạch) ----------------
-#define ROLE_FULL_NODE          0   // 1 bo mạch duy nhất gánh toàn bộ (Cảm biến + OLED + Servo)
-#define ROLE_IR_SENSOR_NODE     1   // Bo mạch 1: Chuyên cảm biến IR đếm người, DHT22, MQ-2, RC522
-#define ROLE_OLED_DISPLAY_NODE  2   // Bo mạch 2: Chuyên nhận telemetry qua MQTT và hiển thị OLED (+ Servo)
-#define ROLE_CORRIDOR_NODE      3   // Bo mạch 3: Node hành lang - Quét RFID đăng ký thẻ chưa có UUID / Access control
+#define ROLE_ROOM_NODE_1        1   // Bo mạch Phòng 1: Cảm biến (DHT22, MQ-2, MQ-135), IR Occupancy, OLED, RFID, Servo, Fan
+#define ROLE_ROOM_NODE_2        2   // Bo mạch Phòng 2: Cảm biến (DHT22, MQ-2, MQ-135), IR Occupancy, OLED, RFID, Servo, Fan
+#define ROLE_CORRIDOR_NODE      3   // Bo mạch Hành lang: Quét RFID đăng ký thẻ + OLED + RGB LED + Buzzer
+#define ROLE_FULL_NODE          0   // Alias tương đương Full Node
+#define ROLE_IR_SENSOR_NODE     4   // Bo mạch chuyên IR/Sensor (Tương thích cấu hình cũ)
+#define ROLE_OLED_DISPLAY_NODE  5   // Bo mạch chuyên OLED/Servo (Tương thích cấu hình cũ)
 
-// 👉 ĐANG CẤU HÌNH CHO BO MẠCH (ROLE_FULL_NODE / ROLE_IR_SENSOR_NODE / ROLE_OLED_DISPLAY_NODE / ROLE_CORRIDOR_NODE):
-#define CURRENT_NODE_ROLE       ROLE_IR_SENSOR_NODE
+// 👉 ĐANG CẤU HÌNH CHO BO MẠCH (ROLE_ROOM_NODE_1 / ROLE_ROOM_NODE_2 / ROLE_CORRIDOR_NODE):
+#define CURRENT_NODE_ROLE       ROLE_ROOM_NODE_2
 
-#if CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
+#if CURRENT_NODE_ROLE == ROLE_ROOM_NODE_1
+  #define NODE_ROLE_NAME        "ROOM 1"
+  #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
+  #define MQTT_USERNAME         "smartcampus_room1"
+  #define MQTT_CLIENT_PREFIX    "ESP32_ROOM1"
+#elif CURRENT_NODE_ROLE == ROLE_ROOM_NODE_2
+  #define NODE_ROLE_NAME        "ROOM 2"
+  #define DEFAULT_ROOM_ID       "22222222-2222-2222-2222-222222222222"
+  #define MQTT_USERNAME         "smartcampus_room2"
+  #define MQTT_CLIENT_PREFIX    "ESP32_ROOM2"
+#elif CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
+  #define NODE_ROLE_NAME        "CORRIDOR"
+  #define DEFAULT_ROOM_ID       ""
+  #define MQTT_USERNAME         "smartcampus_corridor"
+  #define MQTT_CLIENT_PREFIX    "ESP32_CORRIDOR"
+#elif CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
+  #define NODE_ROLE_NAME        "OLED DISP"
+  #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
   #define MQTT_USERNAME         "smartcampus_oled"
   #define MQTT_CLIENT_PREFIX    "ESP32_OLED"
 #elif CURRENT_NODE_ROLE == ROLE_IR_SENSOR_NODE
+  #define NODE_ROLE_NAME        "IR SENSOR"
+  #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
   #define MQTT_USERNAME         "smartcampus_ir"
   #define MQTT_CLIENT_PREFIX    "ESP32_IR"
-#elif CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
-  #define MQTT_USERNAME         "smartcampus_corridor"
-  #define MQTT_CLIENT_PREFIX    "ESP32_CORRIDOR"
 #else
+  #define NODE_ROLE_NAME        "FULL NODE"
+  #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
   #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_FULL"
 #endif
@@ -39,8 +59,10 @@
 #define MQTT_BROKER_URI             DEFAULT_MQTT_BROKER_URI
 #define MQTT_PASSWORD               DEFAULT_MQTT_PASSWORD
 
-// Phòng mặc định (Phòng 402 đã có sẵn trong Docker TimescaleDB)
+#ifndef DEFAULT_ROOM_ID
+// Phòng mặc định dự phòng nếu chưa được cấu hình theo Role
 #define DEFAULT_ROOM_ID             "11111111-1111-1111-1111-111111111111"
+#endif
 
 // ---------------- Hardware Pinout (Tối ưu tuyệt đối, không xung đột) ----------------
 // RGB LED (LEDC Channels 0, 1, 2)

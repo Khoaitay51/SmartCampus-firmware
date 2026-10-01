@@ -15,7 +15,7 @@
 // - Đặt 1: Chế độ test chuyên biệt RC522 (Firmware tạm để test phần cứng độc lập)
 // - Đặt 0: Chế độ chạy toàn bộ hệ thống SmartCampus hoàn chỉnh (Production mode)
 // ===================================================================================
-#define TEST_RC522_FIRMWARE  1
+#define TEST_RC522_FIRMWARE  0
 
 #if !TEST_RC522_FIRMWARE
 
@@ -32,7 +32,7 @@
 static const char *TAG = "MAIN";
 
 void app_main(void) {
-    ESP_LOGI(TAG, "=== SMARTCAMPUS ESP32 ALL-IN-ONE NODE BOOTING ===");
+    ESP_LOGI(TAG, "=== SMARTCAMPUS ESP32 BOOTING [%s] ===", NODE_ROLE_NAME);
 
     // 1. NVS Storage
     ESP_ERROR_CHECK(app_nvs_init());
@@ -45,6 +45,9 @@ void app_main(void) {
     fan_control_init();
     oled_init();
 
+    // Hien thi tien trinh boot tren OLED
+    oled_display_boot(NODE_ROLE_NAME, "DANG KHOI DONG...", "Hardware Init OK");
+
 #if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE
     // 3. Khoi tao RFID RC522 NGAY LAP TUC (hoat dong doc lap, khong phu thuoc Wi-Fi/MQTT)
     ESP_LOGI(TAG, "Initializing RC522 RFID reader...");
@@ -52,32 +55,37 @@ void app_main(void) {
 #endif
 
 #if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE && CURRENT_NODE_ROLE != ROLE_CORRIDOR_NODE
-    // 4. Khoi tao Sensors (Chi can tren Sensor / IR hoac Full Node)
+    // 4. Khoi tao Sensors (Chi can tren Sensor / IR hoac Full/Room Node)
     dht22_init(PIN_DHT22);
     mq_sensor_init();
 #endif
 
-#if CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
-    oled_display_corridor(NULL, "SAN SANG", "QUET THE DANG KY");
-#endif
-
-    // 4. Ket noi Wi-Fi
-    ESP_LOGI(TAG, "Connecting to Wi-Fi...");
+    // 5. Ket noi Wi-Fi
+    ESP_LOGI(TAG, "Connecting to Wi-Fi SSID: %s...", WIFI_SSID);
+    oled_display_boot(NODE_ROLE_NAME, "KET NOI WI-FI...", WIFI_SSID);
     app_wifi_init_sta();
     if (app_wifi_wait_connected(6000)) {
-        ESP_LOGI(TAG, "Wi-Fi connected successfully!");
+        char ip_str[24];
+        app_wifi_get_ip_str(ip_str, sizeof(ip_str));
+        ESP_LOGI(TAG, "Wi-Fi connected successfully! IP: %s", ip_str);
+        oled_display_boot(NODE_ROLE_NAME, "WI-FI KET NOI OK!", ip_str);
+        vTaskDelay(pdMS_TO_TICKS(500));
 
-        // 5. F3 fix: Dong bo thoi gian thuc qua SNTP (sau khi co Wi-Fi)
+        // 6. F3 fix: Dong bo thoi gian thuc qua SNTP (sau khi co Wi-Fi)
+        oled_display_boot(NODE_ROLE_NAME, "DONG BO THOI GIAN...", "SNTP Syncing");
         app_sntp_init();
         app_sntp_wait_synced(10000); // Cho toi da 10s de sync thoi gian
     } else {
         ESP_LOGW(TAG, "Wi-Fi not connected yet! SNTP will sync later when Wi-Fi is available.");
+        oled_display_boot(NODE_ROLE_NAME, "WI-FI CHUA KET NOI", "Kiem tra Router");
+        vTaskDelay(pdMS_TO_TICKS(800));
     }
 
-    // 6. Khoi dong MQTT va cac Peripheral tasks (RFID, IR, Telemetry)
+    // 7. Khoi dong MQTT va cac Peripheral tasks (RFID, IR, Telemetry)
+    oled_display_boot(NODE_ROLE_NAME, "KET NOI MQTT...", "Khoi dong Broker");
     app_mqtt_start();
 
-    ESP_LOGI(TAG, "=== SYSTEM ALL-IN-ONE OPERATIONAL ===");
+    ESP_LOGI(TAG, "=== SYSTEM [%s] OPERATIONAL ===", NODE_ROLE_NAME);
 }
 
 #else
