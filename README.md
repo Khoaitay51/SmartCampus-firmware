@@ -28,8 +28,8 @@ Tất cả các chân được quy hoạch tối ưu, không xung đột chân n
 | | | GND (-) | **GND** | |
 | **8** | **Servo Motor SG90 (Cửa)** | Dây Cam (PWM) | **GPIO 16** | Tín hiệu PWM điều khiển chốt cửa |
 | | | Dây Đỏ / Nâu | **5V / GND** | Nguồn 5V |
-| **9** | **Quạt làm mát / thông gió (Fan)**| Control | **GPIO 14** | Điều khiển qua Transistor NPN / MOSFET / Relay |
-| | | VCC / GND | **5V / GND** | Nguồn quạt 5V |
+| **9** | **Quạt làm mát / thông gió (Fan)**| IN (Control) | **GPIO 14** | Điều khiển qua Module Relay 5V (Active LOW: mức 0 đóng rơ-le) |
+| | | VCC / GND | **5V / GND** | Nguồn cấp cho Module Relay và Quạt 5V |
 | **10** | **Màn hình OLED SSD1306** | SDA | **GPIO 21** | Giao tiếp I2C master mặc định của ESP32 |
 | | | SCL | **GPIO 22** | Giao tiếp I2C master mặc định của ESP32 *(Chuyển sang 22)* |
 | | | VCC / GND | **3.3V / GND** | Hiển thị trạng thái & telemetry |

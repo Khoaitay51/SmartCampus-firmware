@@ -15,15 +15,16 @@ static uint8_t s_speed_pct = 0;
 // ============================================================================
 // Che do 1: Quat 2 day — GPIO on/off (FAN_2WIRE_GPIO = 1)
 //
-// Quat DC 5V chi co 2 day (VCC + GND), khong co chan PWM.
-// Dieu khien bang cach bat/tat nguon qua Transistor NPN hoac MOSFET N-channel:
+// Quat DC 5V (2 day: VCC + GND) dieu khien dong/ngat bang Module Relay 5V:
 //
-//   GPIO14 ---[1kΩ]--- Base(NPN) --- Collector --- GND_Fan
-//                       |                           |
-//                      GND                        VCC 5V
+//   ESP32 (GPIO14) --------------> IN (Relay 5V Module)
+//   Nguon 5V       --------------> VCC (Relay) va COM (Relay)
+//   GND            --------------> GND (Relay)
+//   NO (Normally Open) ----------> Day duong (+) Quat 5V
+//   GND            --------------> Day am (-) Quat 5V
 //
-// FAN_ACTIVE_HIGH = 1: GPIO HIGH = bat quat (NPN / N-MOSFET)
-// FAN_ACTIVE_HIGH = 0: GPIO LOW  = bat quat (Relay Active LOW)
+// FAN_ACTIVE_HIGH = 0: GPIO LOW  = dong relay / bat quat (Relay 5V Active LOW - mac dinh)
+// FAN_ACTIVE_HIGH = 1: GPIO HIGH = dong relay / bat quat (Relay Active HIGH / Transistor NPN)
 // ============================================================================
 
 #if FAN_2WIRE_GPIO

@@ -11,10 +11,17 @@ BAUD=115200
 ROLE=""
 
 # Phân tích tham số thông minh:
-# Cách 1: ./flash.sh COM6 1           -> PORT=COM6, ROLE=1, BAUD=115200
-# Cách 2: ./flash.sh COM6 115200 1    -> PORT=COM6, BAUD=115200, ROLE=1
-# Cách 3: ./flash.sh COM6             -> PORT=COM6, giữ cấu hình role hiện tại
-if [ "$ARG2" = "1" ] || [ "$ARG2" = "2" ] || [ "$ARG2" = "3" ] || [ "$ARG2" = "room1" ] || [ "$ARG2" = "room2" ] || [ "$ARG2" = "corridor" ]; then
+# Cách 1: ./flash.sh 1                 -> PORT=COM6, ROLE=1
+# Cách 2: ./flash.sh COM6 1            -> PORT=COM6, ROLE=1
+# Cách 3: ./flash.sh COM6 115200 1     -> PORT=COM6, BAUD=115200, ROLE=1
+# Cách 4: ./flash.sh                   -> PORT=COM6, giữ vai trò hiện tại
+if [ "$1" = "1" ] || [ "$1" = "2" ] || [ "$1" = "3" ] || [ "$1" = "room1" ] || [ "$1" = "room2" ] || [ "$1" = "corridor" ]; then
+    ROLE="$1"
+    PORT=${2:-COM6}
+    if [ -n "$3" ]; then
+        BAUD="$3"
+    fi
+elif [ "$ARG2" = "1" ] || [ "$ARG2" = "2" ] || [ "$ARG2" = "3" ] || [ "$ARG2" = "room1" ] || [ "$ARG2" = "room2" ] || [ "$ARG2" = "corridor" ]; then
     ROLE="$ARG2"
     if [ -n "$ARG3" ]; then
         BAUD="$ARG3"

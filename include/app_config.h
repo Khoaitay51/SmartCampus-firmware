@@ -11,38 +11,44 @@
 #define ROLE_OLED_DISPLAY_NODE  5   // Bo mạch chuyên OLED/Servo (Tương thích cấu hình cũ)
 
 // 👉 ĐANG CẤU HÌNH CHO BO MẠCH (ROLE_ROOM_NODE_1 / ROLE_ROOM_NODE_2 / ROLE_CORRIDOR_NODE):
-#define CURRENT_NODE_ROLE       ROLE_ROOM_NODE_2
+#define CURRENT_NODE_ROLE       ROLE_ROOM_NODE_1
 
 #if CURRENT_NODE_ROLE == ROLE_ROOM_NODE_1
   #define NODE_ROLE_NAME        "ROOM 1"
   #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
-  #define MQTT_USERNAME         "smartcampus_room1"
+  #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_ROOM1"
+  #define SERVO_DOOR_INVERTED   0   // Phòng 1: Chiều quay servo tiêu chuẩn
 #elif CURRENT_NODE_ROLE == ROLE_ROOM_NODE_2
   #define NODE_ROLE_NAME        "ROOM 2"
   #define DEFAULT_ROOM_ID       "22222222-2222-2222-2222-222222222222"
-  #define MQTT_USERNAME         "smartcampus_room2"
+  #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_ROOM2"
+  #define SERVO_DOOR_INVERTED   1   // Phòng 2: Đảo chiều quay servo (chống đập vào cánh cửa do lắp đối xứng)
 #elif CURRENT_NODE_ROLE == ROLE_CORRIDOR_NODE
   #define NODE_ROLE_NAME        "CORRIDOR"
   #define DEFAULT_ROOM_ID       ""
-  #define MQTT_USERNAME         "smartcampus_corridor"
+  #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_CORRIDOR"
+  #define SERVO_DOOR_INVERTED   0
 #elif CURRENT_NODE_ROLE == ROLE_OLED_DISPLAY_NODE
   #define NODE_ROLE_NAME        "OLED DISP"
   #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
-  #define MQTT_USERNAME         "smartcampus_oled"
+  #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_OLED"
+  #define SERVO_DOOR_INVERTED   0
 #elif CURRENT_NODE_ROLE == ROLE_IR_SENSOR_NODE
   #define NODE_ROLE_NAME        "IR SENSOR"
   #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
-  #define MQTT_USERNAME         "smartcampus_ir"
+  #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_IR"
+  #define SERVO_DOOR_INVERTED   0
 #else
   #define NODE_ROLE_NAME        "FULL NODE"
   #define DEFAULT_ROOM_ID       "11111111-1111-1111-1111-111111111111"
   #define MQTT_USERNAME         "smartcampus"
   #define MQTT_CLIENT_PREFIX    "ESP32_FULL"
+  #define SERVO_DOOR_INVERTED   0
 #endif
 
 // ---------------- Wi-Fi & MQTT Broker Config ----------------
@@ -50,7 +56,7 @@
 // Sử dụng app_nvs_get_wifi_ssid() / app_nvs_get_mqtt_uri() để đọc giá trị runtime.
 #define DEFAULT_WIFI_SSID           "P902"
 #define DEFAULT_WIFI_PASSWORD       "Cntt@902"
-#define DEFAULT_MQTT_BROKER_URI     "mqtt://192.168.1.143:1883" // IP Card Wi-Fi máy Windows chạy Docker/Bridge (192.168.1.143)
+#define DEFAULT_MQTT_BROKER_URI     "mqtt://192.168.1.100:1883" // Máy chủ MQTT Mosquitto (192.168.1.100)
 #define DEFAULT_MQTT_PASSWORD       "123456"
 
 // Aliases tương thích ngược
@@ -84,10 +90,16 @@
 
 // Servo cửa SG90 (LEDC Channel 3)
 #define PIN_SERVO_DOOR              16
+#ifndef SERVO_DOOR_INVERTED
+#define SERVO_DOOR_INVERTED         0       // 0: Chiều chuẩn (Room 1), 1: Đảo chiều (Room 2)
+#endif
+#ifndef SERVO_RUN_TIME_MS
+#define SERVO_RUN_TIME_MS           350     // Thời gian cấp xung quay servo (ms) trước khi ngắt xung (duty=0)
+#endif
 
-// Quạt làm mát / thông gió DC 5V (2 dây: VCC + GND, điều khiển qua Transistor NPN/MOSFET)
+// Quạt làm mát / thông gió DC 5V (2 dây: VCC + GND, điều khiển qua Module Relay 5V)
 #define PIN_FAN                     14
-#define FAN_ACTIVE_HIGH             1       // 1: Mức cao (Transistor NPN / MOSFET), 0: Mức thấp (Relay Active LOW)
+#define FAN_ACTIVE_HIGH             0       // 0: Mức thấp (Relay 5V Active LOW - phổ biến nhất), 1: Mức cao (Relay Active HIGH / Transistor NPN)
 #define FAN_2WIRE_GPIO              1       // 1: Quạt 2 dây (GPIO on/off), 0: Quạt 3-4 dây (PWM speed control via LEDC)
 
 // Còi Buzzer
