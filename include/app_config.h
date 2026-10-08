@@ -11,7 +11,7 @@
 #define ROLE_OLED_DISPLAY_NODE  5   // Bo mạch chuyên OLED/Servo (Tương thích cấu hình cũ)
 
 // 👉 ĐANG CẤU HÌNH CHO BO MẠCH (ROLE_ROOM_NODE_1 / ROLE_ROOM_NODE_2 / ROLE_CORRIDOR_NODE):
-#define CURRENT_NODE_ROLE       ROLE_ROOM_NODE_1
+#define CURRENT_NODE_ROLE       ROLE_ROOM_NODE_2
 
 #if CURRENT_NODE_ROLE == ROLE_ROOM_NODE_1
   #define NODE_ROLE_NAME        "ROOM 1"
@@ -56,7 +56,7 @@
 // Sử dụng app_nvs_get_wifi_ssid() / app_nvs_get_mqtt_uri() để đọc giá trị runtime.
 #define DEFAULT_WIFI_SSID           "P902"
 #define DEFAULT_WIFI_PASSWORD       "Cntt@902"
-#define DEFAULT_MQTT_BROKER_URI     "mqtt://192.168.1.100:1883" // Máy chủ MQTT Mosquitto (192.168.1.100)
+#define DEFAULT_MQTT_BROKER_URI     "mqtt://192.168.1.103:1883" // Máy chủ MQTT Mosquitto (192.168.1.103)
 #define DEFAULT_MQTT_PASSWORD       "123456"
 
 // Aliases tương thích ngược
@@ -97,9 +97,9 @@
 #define SERVO_RUN_TIME_MS           350     // Thời gian cấp xung quay servo (ms) trước khi ngắt xung (duty=0)
 #endif
 
-// Quạt làm mát / thông gió DC 5V (2 dây: VCC + GND, điều khiển qua Module Relay 5V)
+// Quạt làm mát / thông gió DC 5V (2 dây: VCC + GND, điều khiển qua Module Relay 5V / Transistor)
 #define PIN_FAN                     14
-#define FAN_ACTIVE_HIGH             0       // 0: Mức thấp (Relay 5V Active LOW - phổ biến nhất), 1: Mức cao (Relay Active HIGH / Transistor NPN)
+#define FAN_ACTIVE_HIGH             1       // 1: Mức cao (Relay Active HIGH / Transistor), 0: Mức thấp (Relay Active LOW)
 #define FAN_2WIRE_GPIO              1       // 1: Quạt 2 dây (GPIO on/off), 0: Quạt 3-4 dây (PWM speed control via LEDC)
 
 // Còi Buzzer
