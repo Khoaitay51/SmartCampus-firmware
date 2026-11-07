@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <esp_err.h>
 
 /**
  * @brief Khởi tạo module điều khiển quạt thông gió DC 5V.
@@ -16,7 +17,7 @@ void fan_control_init(void);
  * @brief Bật hoặc tắt quạt.
  * @param on true: Bật quạt, false: Tắt quạt
  */
-void fan_control_set_state(bool on);
+esp_err_t fan_control_set_state(bool on);
 
 /**
  * @brief Cài đặt tốc độ quạt theo phần trăm.
@@ -26,7 +27,7 @@ void fan_control_set_state(bool on);
  *
  * @param speed_pct 0: Tắt, 1-100: Tốc độ theo %
  */
-void fan_control_set_speed(uint8_t speed_pct);
+esp_err_t fan_control_set_speed(uint8_t speed_pct);
 
 /**
  * @brief Kiểm tra trạng thái quạt.

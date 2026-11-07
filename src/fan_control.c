@@ -45,24 +45,26 @@ void fan_control_init(void) {
     ESP_LOGI(TAG, "Fan (2-wire GPIO) initialized on GPIO %d (OFF)", PIN_FAN);
 }
 
-void fan_control_set_state(bool on) {
+esp_err_t fan_control_set_state(bool on) {
+#if FAN_ACTIVE_HIGH
+    esp_err_t err = gpio_set_level(PIN_FAN, on ? 1 : 0);
+#else
+    esp_err_t err = gpio_set_level(PIN_FAN, on ? 0 : 1);
+#endif
+    if (err != ESP_OK) return err;
+
     s_is_on = on;
     s_speed_pct = on ? 100 : 0;
 
-#if FAN_ACTIVE_HIGH
-    gpio_set_level(PIN_FAN, on ? 1 : 0);
-#else
-    gpio_set_level(PIN_FAN, on ? 0 : 1);
-#endif
-
     ESP_LOGI(TAG, "Fan %s (GPIO %d = %d)",
              on ? "ON" : "OFF", PIN_FAN, gpio_get_level(PIN_FAN));
+    return ESP_OK;
 }
 
-void fan_control_set_speed(uint8_t speed_pct) {
+esp_err_t fan_control_set_speed(uint8_t speed_pct) {
     // Quat 2 day khong co speed control -> map thanh on/off
     if (speed_pct > 100) speed_pct = 100;
-    fan_control_set_state(speed_pct > 0);
+    return fan_control_set_state(speed_pct > 0);
 }
 
 bool fan_control_is_on(void) {
@@ -109,23 +111,27 @@ void fan_control_init(void) {
     s_speed_pct = 0;
 }
 
-void fan_control_set_speed(uint8_t speed_pct) {
+esp_err_t fan_control_set_speed(uint8_t speed_pct) {
     if (speed_pct > 100) speed_pct = 100;
-    s_speed_pct = speed_pct;
-    s_is_on = (speed_pct > 0);
 
     uint32_t duty = (speed_pct * 255) / 100;
 #if !FAN_ACTIVE_HIGH
     duty = 255 - duty;
 #endif
 
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_4, duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_4);
+    esp_err_t err = ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_4, duty);
+    if (err != ESP_OK) return err;
+    err = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_4);
+    if (err != ESP_OK) return err;
+
+    s_speed_pct = speed_pct;
+    s_is_on = (speed_pct > 0);
     ESP_LOGI(TAG, "Fan speed set to: %d%% (Duty: %lu/255)", speed_pct, (unsigned long)duty);
+    return ESP_OK;
 }
 
-void fan_control_set_state(bool on) {
-    fan_control_set_speed(on ? 100 : 0);
+esp_err_t fan_control_set_state(bool on) {
+    return fan_control_set_speed(on ? 100 : 0);
 }
 
 bool fan_control_is_on(void) {

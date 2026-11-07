@@ -329,18 +329,34 @@ static void handle_mqtt_message(const char *topic, int topic_len, const char *da
                 bool lock = (strcasecmp(j_val->valuestring, "locked") == 0);
                 servo_door_set_locked(lock);
                 buzzer_play(BUZZER_PATTERN_SHORT);
-            } else if (strcmp(j_cmd->valuestring, "fan") == 0 && j_val) {
+            } else if (strcmp(j_cmd->valuestring, "fan") == 0) {
+                esp_err_t result = ESP_ERR_INVALID_ARG;
                 if (cJSON_IsNumber(j_val)) {
-                    fan_control_set_speed((uint8_t)j_val->valueint);
-                } else if (j_val->valuestring) {
+                    if (j_val->valuedouble >= 0 && j_val->valuedouble <= 100) {
+                        result = fan_control_set_speed((uint8_t)j_val->valueint);
+                    }
+                } else if (cJSON_IsString(j_val)) {
                     bool on = (strcasecmp(j_val->valuestring, "on") == 0 ||
                                strcmp(j_val->valuestring, "1") == 0 ||
                                strcasecmp(j_val->valuestring, "true") == 0);
-                    fan_control_set_state(on);
+                    bool off = (strcasecmp(j_val->valuestring, "off") == 0 ||
+                                strcmp(j_val->valuestring, "0") == 0 ||
+                                strcasecmp(j_val->valuestring, "false") == 0);
+                    if (on || off) result = fan_control_set_state(on);
                 }
-                buzzer_play(BUZZER_PATTERN_SHORT);
-                ESP_LOGI(TAG, "Fan command: %s (%d%%)", 
-                         fan_control_is_on() ? "ON" : "OFF", fan_control_get_speed());
+                cJSON *j_cid = cJSON_GetObjectItem(payload, "command_id");
+                if (cJSON_IsString(j_cid) && strlen(j_cid->valuestring) == 36 &&
+                    strspn(j_cid->valuestring, "0123456789abcdefABCDEF-") == 36) {
+                    send_command_ack(j_cid->valuestring, result == ESP_OK,
+                                     result == ESP_OK ? NULL : esp_err_to_name(result));
+                }
+                if (result == ESP_OK) {
+                    buzzer_play(BUZZER_PATTERN_SHORT);
+                    ESP_LOGI(TAG, "Fan command: %s (%d%%)",
+                             fan_control_is_on() ? "ON" : "OFF", fan_control_get_speed());
+                } else {
+                    ESP_LOGW(TAG, "Fan command failed: %s", esp_err_to_name(result));
+                }
             } else if (strcmp(j_cmd->valuestring, "buzzer") == 0 && j_val && j_val->valuestring) {
                 const char *val = j_val->valuestring;
                 if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
