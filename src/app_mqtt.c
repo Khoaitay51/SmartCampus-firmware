@@ -150,6 +150,14 @@ static void send_command_ack(const char *command_id, bool success, const char *e
     ESP_LOGI(TAG, "Sent ACK for command: %s", command_id);
 }
 
+static void send_command_ack_if_uuid(cJSON *payload, bool success, const char *err_msg) {
+    cJSON *j_cid = cJSON_GetObjectItem(payload, "command_id");
+    if (cJSON_IsString(j_cid) && j_cid->valuestring && strlen(j_cid->valuestring) == 36 &&
+        strspn(j_cid->valuestring, "0123456789abcdefABCDEF-") == 36) {
+        send_command_ack(j_cid->valuestring, success, err_msg);
+    }
+}
+
 #if CURRENT_NODE_ROLE != ROLE_OLED_DISPLAY_NODE && CURRENT_NODE_ROLE != ROLE_CORRIDOR_NODE
 // Callback khi co nguoi buoc qua cua (FR-SD-02)
 static void on_occupancy_detected(occupancy_dir_t dir) {
@@ -300,7 +308,8 @@ static void handle_mqtt_message(const char *topic, int topic_len, const char *da
 
             if (strcasecmp(s_last_mode, "emergency") == 0) {
                 servo_door_set_locked(false);
-                fan_control_set_state(false); // Tat quat de chong thoi lan toa khoi
+                // Tat quat tuan hoan ban dau khi vao EMERGENCY; neu HITL duyet hut khoi (K11-02) thi lenh fan:on sau do van duoc thuc thi.
+                fan_control_set_state(false);
                 buzzer_play(BUZZER_PATTERN_EMERGENCY);
             } else if (strcasecmp(s_last_mode, "exam") == 0 || strcasecmp(s_last_mode, "lock") == 0) {
                 servo_door_set_locked(true);
@@ -319,16 +328,24 @@ static void handle_mqtt_message(const char *topic, int topic_len, const char *da
             app_mqtt_refresh_display();
         }
     }
-    // 3. Nhan lenh Room Command (door, buzzer, led_strip...)
+    // 3. Nhan lenh Room Command (door, fan, buzzer, led_strip/light...)
     else if (strstr(t, "/command/room/") != NULL) {
         cJSON *j_cmd = cJSON_GetObjectItem(payload, "command_type");
         cJSON *j_val = cJSON_GetObjectItem(payload, "command_value");
 
         if (j_cmd && j_cmd->valuestring) {
-            if (strcmp(j_cmd->valuestring, "door") == 0 && j_val && j_val->valuestring) {
-                bool lock = (strcasecmp(j_val->valuestring, "locked") == 0);
-                servo_door_set_locked(lock);
-                buzzer_play(BUZZER_PATTERN_SHORT);
+            if (strcmp(j_cmd->valuestring, "door") == 0) {
+                bool valid_door = (j_val && cJSON_IsString(j_val) && j_val->valuestring &&
+                                   (strcasecmp(j_val->valuestring, "locked") == 0 ||
+                                    strcasecmp(j_val->valuestring, "unlocked") == 0));
+                if (valid_door) {
+                    bool lock = (strcasecmp(j_val->valuestring, "locked") == 0);
+                    servo_door_set_locked(lock);
+                    buzzer_play(BUZZER_PATTERN_SHORT);
+                    send_command_ack_if_uuid(payload, true, NULL);
+                } else {
+                    send_command_ack_if_uuid(payload, false, "INVALID_DOOR_VALUE");
+                }
             } else if (strcmp(j_cmd->valuestring, "fan") == 0) {
                 esp_err_t result = ESP_ERR_INVALID_ARG;
                 if (cJSON_IsNumber(j_val)) {
@@ -344,12 +361,8 @@ static void handle_mqtt_message(const char *topic, int topic_len, const char *da
                                 strcasecmp(j_val->valuestring, "false") == 0);
                     if (on || off) result = fan_control_set_state(on);
                 }
-                cJSON *j_cid = cJSON_GetObjectItem(payload, "command_id");
-                if (cJSON_IsString(j_cid) && strlen(j_cid->valuestring) == 36 &&
-                    strspn(j_cid->valuestring, "0123456789abcdefABCDEF-") == 36) {
-                    send_command_ack(j_cid->valuestring, result == ESP_OK,
-                                     result == ESP_OK ? NULL : esp_err_to_name(result));
-                }
+                send_command_ack_if_uuid(payload, result == ESP_OK,
+                                         result == ESP_OK ? NULL : esp_err_to_name(result));
                 if (result == ESP_OK) {
                     buzzer_play(BUZZER_PATTERN_SHORT);
                     ESP_LOGI(TAG, "Fan command: %s (%d%%)",
@@ -376,17 +389,23 @@ static void handle_mqtt_message(const char *topic, int topic_len, const char *da
                 } else {
                     buzzer_play(BUZZER_PATTERN_SHORT);
                 }
-            } else if (strcmp(j_cmd->valuestring, "led_strip") == 0) {
+                send_command_ack_if_uuid(payload, true, NULL);
+            } else if (strcmp(j_cmd->valuestring, "led_strip") == 0 || strcmp(j_cmd->valuestring, "light") == 0) {
                 cJSON *j_col = cJSON_GetObjectItem(payload, "color");
                 cJSON *j_eff = cJSON_GetObjectItem(payload, "effect");
                 cJSON *j_br = cJSON_GetObjectItem(payload, "brightness");
-                const char *col = j_col ? j_col->valuestring : "#FFFFFF";
-                const char *eff_str = j_eff ? j_eff->valuestring : "static";
-                uint8_t br = j_br ? (uint8_t)j_br->valueint : 255;
+                bool is_off = (j_val && cJSON_IsString(j_val) && j_val->valuestring &&
+                               (strcasecmp(j_val->valuestring, "off") == 0 ||
+                                strcmp(j_val->valuestring, "0") == 0 ||
+                                strcasecmp(j_val->valuestring, "false") == 0));
+                const char *col = (j_col && j_col->valuestring) ? j_col->valuestring : (is_off ? "#000000" : "#FFFFFF");
+                const char *eff_str = (j_eff && j_eff->valuestring) ? j_eff->valuestring : "static";
+                uint8_t br = j_br ? (uint8_t)j_br->valueint : (is_off ? 0 : 255);
                 led_effect_t eff = LED_EFFECT_STATIC;
                 if (eff_str && strcmp(eff_str, "breathe") == 0) eff = LED_EFFECT_BREATHE;
                 else if (eff_str && strcmp(eff_str, "strobe") == 0) eff = LED_EFFECT_STROBE;
                 rgb_led_set_hex(col, eff, br);
+                send_command_ack_if_uuid(payload, true, NULL);
             }
             app_mqtt_refresh_display();
         }
